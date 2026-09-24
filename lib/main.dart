@@ -6,7 +6,7 @@ void main() {
 }
 
 class CompanionApp extends StatelessWidget {
-  const CompanionApp({Key? key}) : super(key: key);
+  const CompanionApp({super.key});
 
   @override
   Widget build(BuildContext context) {

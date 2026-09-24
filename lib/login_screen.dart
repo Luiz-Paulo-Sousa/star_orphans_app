@@ -1,10 +1,9 @@
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'reset_password_screen.dart'; // Importação da nova tela de redefinição
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,47 +17,48 @@ class _LoginScreenState extends State<LoginScreen> {
   final _accessKeyController = TextEditingController();
   bool _isLoading = false;
 
-  void _autenticar() async {
-    final operatorId = _operatorController.text.trim();
-    final accessKey = _accessKeyController.text.trim();
+  Future<void> _autenticar() async {
+    String username = _operatorController.text.trim();
+    String senhaPura = _accessKeyController.text;
 
-    // Validação rápida de campos vazios
-    if (operatorId.isEmpty || accessKey.isEmpty) {
-      _exibirStatus('PREENCHA TODOS OS CAMPOS DE ACESSO', isError: true);
+    if (username.isEmpty || senhaPura.isEmpty) {
+      _exibirStatus('PREENCHA TODOS OS CAMPOS DE ACESSO!', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
+    String salt = username;
+    String combinacao = senhaPura + salt;
+
+    var bytes = utf8.encode(combinacao);
+    var digest = sha256.convert(bytes);
+    String passwordHash = digest.toString();
+
+    var url = Uri.parse('http://26.239.180.177:8020/login');
+
     try {
-      // 1. Lógica de Hash SHA-256 com Salt (ID do Operador)
-      final saltedKey = '$operatorId:$accessKey';
-      final bytes = utf8.encode(saltedKey);
-      final keyHash = sha256.convert(bytes).toString();
-
-      // 2. Chamada HTTP para a API Node.js
-      // Ajusta o IP/URL conforme o teu ambiente (ex: http://localhost:3000/api/login)
-      final url = Uri.parse('http://localhost:3000/api/login');
-
-      final response = await http.post(
+      var response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'operatorId': operatorId, 'keyHash': keyHash}),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"username": username, "password_hash": passwordHash}),
       );
 
       if (!mounted) return;
 
+      var dados = jsonDecode(response.body);
+
       if (response.statusCode == 200) {
-        _exibirStatus('AUTENTICAÇÃO BEM-SUCEDIDA! ACESSO PERMITIDO.');
-        // TODO: Navegar para a próxima tela do Companion App
+        _exibirStatus(
+          "SUCESSO: ${dados['mensagem'].toString().toUpperCase()} (ID: ${dados['account_id']})",
+        );
       } else {
-        final body = jsonDecode(response.body);
-        final errorMsg = body['message'] ?? 'FALHA NA AUTENTICAÇÃO';
-        _exibirStatus(errorMsg.toUpperCase(), isError: true);
+        String msg = dados['mensagem'] ?? 'FALHA NA AUTENTICAÇÃO';
+        _exibirStatus("ERRO: ${msg.toUpperCase()}", isError: true);
       }
     } catch (e) {
       if (mounted) {
-        _exibirStatus('ERRO DE CONEXÃO COM O SERVIDOR', isError: true);
+        _exibirStatus("ERRO DE CONEXÃO: $e", isError: true);
       }
     } finally {
       if (mounted) {
@@ -67,7 +67,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Helper para exibir feedback visual sci-fi na tela
   void _exibirStatus(String mensagem, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -82,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
             letterSpacing: 1.2,
           ),
         ),
-        duration: const Duration(seconds: 3),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -133,16 +132,27 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // --- CABEÇALHO ---
+                  // --- CABEÇALHO COM O LOGO DO STAR ORPHANS ---
                   Center(
                     child: Column(
                       children: [
-                        const Icon(Icons.security, color: colorCyan, size: 38),
-                        const SizedBox(height: 8),
+                        Image.asset(
+                          'assets/images/star_orphans.png',
+                          height: 80,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.star_outline,
+                              color: colorCyan,
+                              size: 48,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         Text(
                           'COMPANION',
                           style: GoogleFonts.shareTechMono(
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                             letterSpacing: 3,
@@ -159,14 +169,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
 
                   // --- CAMPO: ID DO OPERADOR ---
                   _buildLabel('ID DO OPERADOR'),
                   const SizedBox(height: 6),
                   _buildTextField(
                     controller: _operatorController,
-                    hintText: 'OP-XXXXX',
+                    hintText: 'Nome',
                     icon: Icons.person_outline,
                   ),
                   const SizedBox(height: 20),
@@ -216,11 +226,38 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // --- RODAPÉ DE AÇÕES ---
+                  // --- RODAPÉ COM LOGO DA XAMÃ CENTRALIZADO ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _buildFooterLink('REDEFINIR CHAVE', () {}),
+                      // Chamada para a tela de redefinição de chave/senha
+                      _buildFooterLink('REDEFINIR CHAVE', () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ResetPasswordScreen(),
+                          ),
+                        );
+                      }),
+
+                      // Logotipo da Xamã Entertainment no meio
+                      Image.asset(
+                        'assets/images/xama.png',
+                        height: 52,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Text(
+                            'XAMÃ',
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white38,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        },
+                      ),
+
                       _buildFooterLink('NOVO OPERADOR?', () {}),
                     ],
                   ),
