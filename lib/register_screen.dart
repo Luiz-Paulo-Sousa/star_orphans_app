@@ -3,59 +3,97 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'reset_password_screen.dart'; // Importação da nova tela de redefinição
-import 'register_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final _operatorController = TextEditingController();
+  final _emailController = TextEditingController();
   final _accessKeyController = TextEditingController();
+  final _confirmAccessKeyController = TextEditingController();
   bool _isLoading = false;
 
-  Future<void> _autenticar() async {
+  Future<void> _cadastrarOperador() async {
     String username = _operatorController.text.trim();
+    String email = _emailController.text.trim();
     String senhaPura = _accessKeyController.text;
+    String confirmacaoSenha = _confirmAccessKeyController.text;
 
-    if (username.isEmpty || senhaPura.isEmpty) {
-      _exibirStatus('PREENCHA TODOS OS CAMPOS DE ACESSO!', isError: true);
+    // Validar preenchimento dos campos
+    if (username.isEmpty ||
+        email.isEmpty ||
+        senhaPura.isEmpty ||
+        confirmacaoSenha.isEmpty) {
+      _exibirStatus('PREENCHA TODOS OS CAMPOS!', isError: true);
+      return;
+    }
+
+    // Validar e-mail simples
+    if (!email.contains('@') || !email.contains('.')) {
+      _exibirStatus('INFORME UM E-MAIL VÁLIDO!', isError: true);
+      return;
+    }
+
+    // Validar correspondência de senha
+    if (senhaPura != confirmacaoSenha) {
+      _exibirStatus('AS CHAVES DE ACESSO NÃO COINCIDEM!', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
+    // Hash da senha (SHA-256 com salt do username)
     String salt = username;
     String combinacao = senhaPura + salt;
-
     var bytes = utf8.encode(combinacao);
     var digest = sha256.convert(bytes);
     String passwordHash = digest.toString();
 
-    var url = Uri.parse('http://26.239.180.177:8020/login');
+    // Endpoint de cadastro
+    var url = Uri.parse('http://26.239.180.177:8020/register');
 
     try {
       var response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"username": username, "password_hash": passwordHash}),
+        body: jsonEncode({
+          "username": username,
+          "email": email,
+          "password_hash": passwordHash,
+        }),
       );
 
       if (!mounted) return;
 
-      var dados = jsonDecode(response.body);
+      Map<String, dynamic> dados = {};
+      try {
+        dados = jsonDecode(response.body);
+      } catch (_) {}
 
-      if (response.statusCode == 200) {
-        _exibirStatus(
-          "SUCESSO: ${dados['mensagem'].toString().toUpperCase()} (ID: ${dados['account_id']})",
-        );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        String msgSucesso =
+            dados['mensagem']?.toString() ??
+            dados['message']?.toString() ??
+            'OPERADOR CADASTRADO COM SUCESSO';
+        _exibirStatus("SUCESSO: ${msgSucesso.toUpperCase()}");
+
+        // Retorna para o Login após sucesso
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) Navigator.pop(context);
+        });
       } else {
-        String msg = dados['mensagem'] ?? 'FALHA NA AUTENTICAÇÃO';
-        _exibirStatus("ERRO: ${msg.toUpperCase()}", isError: true);
+        // Exibe mensagem de erro retornada pelo servidor
+        String msg =
+            dados['mensagem'] ??
+            dados['message'] ??
+            dados['error'] ??
+            'FALHA NO CADASTRO DO OPERADOR';
+        _exibirStatus("ERRO: ${msg.toString().toUpperCase()}", isError: true);
       }
     } catch (e) {
       if (mounted) {
@@ -133,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // --- CABEÇALHO COM O LOGO DO STAR ORPHANS ---
+                  // --- CABEÇALHO ---
                   Center(
                     child: Column(
                       children: [
@@ -160,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         Text(
-                          'AUTENTICAÇÃO DE OPERADOR v1.0',
+                          'CADASTRO DE NOVO OPERADOR v1.0',
                           style: GoogleFonts.shareTechMono(
                             fontSize: 10,
                             color: colorCyan.withValues(alpha: 0.8),
@@ -170,17 +208,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
 
                   // --- CAMPO: ID DO OPERADOR ---
-                  _buildLabel('ID DO OPERADOR'),
+                  _buildLabel('ID DO NOVO OPERADOR'),
                   const SizedBox(height: 6),
                   _buildTextField(
                     controller: _operatorController,
-                    hintText: 'Nome',
-                    icon: Icons.person_outline,
+                    hintText: 'Nome do jogador',
+                    icon: Icons.person_add_outlined,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
+
+                  // --- CAMPO: E-MAIL DO OPERADOR ---
+                  _buildLabel('E-MAIL DO OPERADOR'),
+                  const SizedBox(height: 6),
+                  _buildTextField(
+                    controller: _emailController,
+                    hintText: 'operador@dominio.com',
+                    icon: Icons.email_outlined,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 14),
 
                   // --- CAMPO: CHAVE DE ACESSO ---
                   _buildLabel('CHAVE DE ACESSO'),
@@ -191,11 +240,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     isPassword: true,
                     icon: Icons.key_outlined,
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 14),
 
-                  // --- BOTÃO DE AUTENTICAÇÃO ---
+                  // --- CAMPO: CONFIRMAR CHAVE DE ACESSO ---
+                  _buildLabel('CONFIRMAR CHAVE DE ACESSO'),
+                  const SizedBox(height: 6),
+                  _buildTextField(
+                    controller: _confirmAccessKeyController,
+                    hintText: '••••••••',
+                    isPassword: true,
+                    icon: Icons.lock_outline,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // --- BOTÃO CADASTRAR ---
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _autenticar,
+                    onPressed: _isLoading ? null : _cadastrarOperador,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0066FF),
                       foregroundColor: Colors.white,
@@ -217,7 +277,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             )
                             : Text(
-                              'AUTENTICAR',
+                              'CADASTRAR OPERADOR',
                               style: GoogleFonts.shareTechMono(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -225,24 +285,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // --- RODAPÉ COM LOGO DA XAMÃ CENTRALIZADO ---
+                  // --- RODAPÉ ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Chamada para a tela de redefinição de chave/senha
-                      _buildFooterLink('REDEFINIR CHAVE', () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ResetPasswordScreen(),
-                          ),
-                        );
+                      _buildFooterLink('VOLTAR AO LOGIN', () {
+                        Navigator.pop(context);
                       }),
-
-                      // Logotipo da Xamã Entertainment no meio
                       Image.asset(
                         'assets/images/xama.png',
                         height: 52,
@@ -258,15 +310,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           );
                         },
                       ),
-
-                      _buildFooterLink('NOVO OPERADOR?', () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RegisterScreen(),
-                          ),
-                        );
-                      }),
                     ],
                   ),
                 ],
@@ -294,10 +337,12 @@ class _LoginScreenState extends State<LoginScreen> {
     required String hintText,
     bool isPassword = false,
     required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return TextField(
       controller: controller,
       obscureText: isPassword,
+      keyboardType: keyboardType,
       style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
         prefixIcon: Icon(
@@ -311,7 +356,7 @@ class _LoginScreenState extends State<LoginScreen> {
         fillColor: const Color(0xFF0A0E14),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 14,
+          vertical: 12,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),

@@ -155,6 +155,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Future<void> _resetPassword() async {
     final pass = _passwordController.text;
     final confirmPass = _confirmPasswordController.text;
+    final username = _usernameController.text.trim();
 
     if (pass.isEmpty || confirmPass.isEmpty) {
       setState(() => _errorMessage = 'Preencha os dois campos de senha.');
@@ -176,16 +177,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
 
     try {
-      // 1. Calcula o HASH SHA-256 da nova senha
-      final bytes = utf8.encode(pass);
+      // 1. Aplica o Salt (senha + username) idêntico ao processo de Login
+      final combinacao = pass + username;
+      final bytes = utf8.encode(combinacao);
       final passwordHash = sha256.convert(bytes).toString();
 
-      // 2. Envia para o servidor com os parâmetros esperados pelo Node.js
+      // 2. Envia o hash ajustado para o servidor
       final response = await http.post(
         Uri.parse('$baseUrl/reset-password'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'username': _usernameController.text.trim(),
+          'username': username,
           'code': _codeController.text.trim(),
           'new_password_hash': passwordHash,
         }),
@@ -197,7 +199,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Senha redefinida com sucesso!'),
+            content: Text(
+              'Senha redefinida com sucesso! Faça login com a nova senha.',
+            ),
             backgroundColor: Colors.cyan,
           ),
         );
@@ -301,7 +305,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   const SizedBox(height: 16),
                 ],
 
-                // --- PASSO 1: INFORMAL USERNAME ---
+                // --- PASSO 1: INFORMAR USERNAME ---
                 if (_step == 1) ...[
                   const Text(
                     'Informe seu username para enviarmos um código de validação ao e-mail cadastrado.',
