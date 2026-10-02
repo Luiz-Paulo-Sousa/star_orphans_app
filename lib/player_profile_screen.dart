@@ -95,17 +95,10 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                             _buildCombatStatsBar(),
                             const SizedBox(height: 16),
 
-                            OrientationBuilder(
-                              builder: (context, orientation) {
-                                if (orientation == Orientation.portrait) {
-                                  return Column(
-                                    children: [
-                                      _buildReputationPanel(),
-                                      const SizedBox(height: 16),
-                                      _buildSkillsPanel(),
-                                    ],
-                                  );
-                                } else {
+                            // Layout Responsivo por Largura (Desktop lado a lado, Mobile empilhado)
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                if (constraints.maxWidth >= 800) {
                                   return Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -113,6 +106,14 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                                       Expanded(child: _buildReputationPanel()),
                                       const SizedBox(width: 16),
                                       Expanded(child: _buildSkillsPanel()),
+                                    ],
+                                  );
+                                } else {
+                                  return Column(
+                                    children: [
+                                      _buildReputationPanel(),
+                                      const SizedBox(height: 16),
+                                      _buildSkillsPanel(),
                                     ],
                                   );
                                 }
@@ -282,16 +283,24 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                       ),
                     ),
                     Expanded(
-                      child: Align(
-                        alignment:
-                            isPositive
-                                ? Alignment.centerLeft
-                                : Alignment.centerRight,
-                        child: FractionallySizedBox(
-                          widthFactor: (val.abs() / 100).clamp(0.05, 1.0),
-                          child: Container(height: 10, color: barColor),
-                        ),
-                      ),
+                      child:
+                          val == 0
+                              ? const SizedBox(
+                                height: 10,
+                              ) // Oculta barra se zero
+                              : Align(
+                                alignment:
+                                    isPositive
+                                        ? Alignment.centerLeft
+                                        : Alignment.centerRight,
+                                child: FractionallySizedBox(
+                                  widthFactor: (val.abs() / 100).clamp(
+                                    0.05,
+                                    1.0,
+                                  ),
+                                  child: Container(height: 10, color: barColor),
+                                ),
+                              ),
                     ),
                     const SizedBox(width: 8),
                     SizedBox(
@@ -344,12 +353,17 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                       ),
                     ),
                     Expanded(
-                      child: LinearProgressIndicator(
-                        value: (val / 100).clamp(0.0, 1.0),
-                        backgroundColor: Colors.transparent,
-                        color: Colors.greenAccent,
-                        minHeight: 10,
-                      ),
+                      child:
+                          val == 0
+                              ? const SizedBox(
+                                height: 10,
+                              ) // Oculta barra se zero
+                              : LinearProgressIndicator(
+                                value: (val / 100).clamp(0.0, 1.0),
+                                backgroundColor: Colors.transparent,
+                                color: Colors.greenAccent,
+                                minHeight: 10,
+                              ),
                     ),
                   ],
                 ),
