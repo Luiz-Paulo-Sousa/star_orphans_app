@@ -94,8 +94,6 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                             const SizedBox(height: 12),
                             _buildCombatStatsBar(),
                             const SizedBox(height: 16),
-
-                            // Layout Responsivo por Largura (Desktop lado a lado, Mobile empilhado)
                             LayoutBuilder(
                               builder: (context, constraints) {
                                 if (constraints.maxWidth >= 800) {
@@ -266,7 +264,9 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
               final int val = rep['percentage'];
               final bool isPositive = val >= 0;
               final Color barColor =
-                  isPositive ? Colors.greenAccent : Colors.redAccent;
+                  isPositive
+                      ? const Color(0xFF00FF66)
+                      : const Color(0xFFFF3333);
 
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -285,20 +285,29 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                     Expanded(
                       child:
                           val == 0
-                              ? const SizedBox(
-                                height: 10,
-                              ) // Oculta barra se zero
+                              ? const SizedBox(height: 10)
                               : Align(
-                                alignment:
-                                    isPositive
-                                        ? Alignment.centerLeft
-                                        : Alignment.centerRight,
+                                alignment: Alignment.centerLeft,
                                 child: FractionallySizedBox(
                                   widthFactor: (val.abs() / 100).clamp(
                                     0.05,
                                     1.0,
                                   ),
-                                  child: Container(height: 10, color: barColor),
+                                  child: Container(
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: barColor,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: barColor.withValues(
+                                            alpha: 0.6,
+                                          ),
+                                          blurRadius: 6,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                     ),
@@ -311,6 +320,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                         style: GoogleFonts.shareTechMono(
                           color: barColor,
                           fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
@@ -332,6 +342,8 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
       {'name': 'MERCENÁRIO', 'val': skills['mercenary']},
     ];
 
+    const Color skillColor = Color(0xFF00FF66);
+
     return _buildOuterBox(
       title: 'HABILIDADES:',
       child: Column(
@@ -339,7 +351,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
             skillList.map((skill) {
               final int val = skill['val'];
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6.0),
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Row(
                   children: [
                     SizedBox(
@@ -355,15 +367,41 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                     Expanded(
                       child:
                           val == 0
-                              ? const SizedBox(
-                                height: 10,
-                              ) // Oculta barra se zero
-                              : LinearProgressIndicator(
-                                value: (val / 100).clamp(0.0, 1.0),
-                                backgroundColor: Colors.transparent,
-                                color: Colors.greenAccent,
-                                minHeight: 10,
+                              ? const SizedBox(height: 10)
+                              : Align(
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: (val / 100).clamp(0.05, 1.0),
+                                  child: Container(
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: skillColor,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: skillColor.withValues(
+                                            alpha: 0.6,
+                                          ),
+                                          blurRadius: 6,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 45,
+                      child: Text(
+                        '$val%',
+                        textAlign: TextAlign.end,
+                        style: GoogleFonts.shareTechMono(
+                          color: skillColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
