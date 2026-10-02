@@ -3,8 +3,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'reset_password_screen.dart'; // Importação da nova tela de redefinição
+import 'reset_password_screen.dart';
 import 'register_screen.dart';
+import 'player_profile_screen.dart'; // Importação da tela de perfil
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,12 +30,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // [MODIFICADO] Salt descontinuado: o hash agora é gerado apenas com a senha pura
     var bytes = utf8.encode(senhaPura);
     var digest = sha256.convert(bytes);
     String passwordHash = digest.toString();
 
-    var url = Uri.parse('http://26.239.180.177:8020/login');
+    const String baseUrl = 'http://26.239.180.177:8020';
+    var url = Uri.parse('$baseUrl/login');
 
     try {
       var response = await http.post(
@@ -48,8 +49,17 @@ class _LoginScreenState extends State<LoginScreen> {
       var dados = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        _exibirStatus(
-          "SUCESSO: ${dados['mensagem'].toString().toUpperCase()} (ID: ${dados['account_id']})",
+        int accountId = dados['account_id'];
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => PlayerProfileScreen(
+                  accountId: accountId,
+                  apiBaseUrl: baseUrl,
+                ),
+          ),
         );
       } else {
         String msg = dados['mensagem'] ?? 'FALHA NA AUTENTICAÇÃO';
@@ -131,7 +141,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // --- CABEÇALHO COM O LOGO DO STAR ORPHANS ---
                   Center(
                     child: Column(
                       children: [
@@ -170,7 +179,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // --- CAMPO: ID DO OPERADOR ---
                   _buildLabel('ID DO OPERADOR'),
                   const SizedBox(height: 6),
                   _buildTextField(
@@ -180,7 +188,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // --- CAMPO: CHAVE DE ACESSO ---
                   _buildLabel('CHAVE DE ACESSO'),
                   const SizedBox(height: 6),
                   _buildTextField(
@@ -191,7 +198,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // --- BOTÃO DE AUTENTICAÇÃO ---
                   ElevatedButton(
                     onPressed: _isLoading ? null : _autenticar,
                     style: ElevatedButton.styleFrom(
@@ -225,12 +231,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // --- RODAPÉ COM LOGO DA XAMÃ CENTRALIZADO ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Chamada para a tela de redefinição de chave/senha
                       _buildFooterLink('REDEFINIR CHAVE', () {
                         Navigator.push(
                           context,
@@ -240,7 +244,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         );
                       }),
 
-                      // Logotipo da Xamã Entertainment no meio
                       Image.asset(
                         'assets/images/xama.png',
                         height: 52,
