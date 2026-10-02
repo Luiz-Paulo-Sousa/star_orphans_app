@@ -29,10 +29,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    String salt = username;
-    String combinacao = senhaPura + salt;
-
-    var bytes = utf8.encode(combinacao);
+    // [MODIFICADO] Salt descontinuado: o hash agora é gerado apenas com a senha pura
+    var bytes = utf8.encode(senhaPura);
     var digest = sha256.convert(bytes);
     String passwordHash = digest.toString();
 

@@ -1,73 +1,38 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'verify_email_screen.dart';
 
-class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+class VerifyEmailScreen extends StatefulWidget {
+  final String username;
+
+  const VerifyEmailScreen({super.key, required this.username});
 
   @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
+  State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
-  final _operatorController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _accessKeyController = TextEditingController();
-  final _confirmAccessKeyController = TextEditingController();
+class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
+  final _codeController = TextEditingController();
   bool _isLoading = false;
 
-  Future<void> _cadastrarOperador() async {
-    String username = _operatorController.text.trim();
-    String email = _emailController.text.trim();
-    String senhaPura = _accessKeyController.text;
-    String confirmacaoSenha = _confirmAccessKeyController.text;
+  Future<void> _validarCodigo() async {
+    String codigo = _codeController.text.trim();
 
-    // Validar preenchimento dos campos
-    if (username.isEmpty ||
-        email.isEmpty ||
-        senhaPura.isEmpty ||
-        confirmacaoSenha.isEmpty) {
-      _exibirStatus('PREENCHA TODOS OS CAMPOS!', isError: true);
-      return;
-    }
-
-    // Validar e-mail simples
-    if (!email.contains('@') || !email.contains('.')) {
-      _exibirStatus('INFORME UM E-MAIL VÁLIDO!', isError: true);
-      return;
-    }
-
-    // Validar correspondência de senha
-    if (senhaPura != confirmacaoSenha) {
-      _exibirStatus('AS CHAVES DE ACESSO NÃO COINCIDEM!', isError: true);
+    if (codigo.isEmpty) {
+      _exibirStatus('DIGITE O CÓDIGO DE VALIDAÇÃO!', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // [NOVO] Cálculo dos hashes solicitados pelo backend:
-    // hash_one = hash do username | hash_two = hash do email | password_hash = hash da senha pura
-    String hashOne = sha256.convert(utf8.encode(username)).toString();
-    String hashTwo = sha256.convert(utf8.encode(email)).toString();
-    String passwordHash = sha256.convert(utf8.encode(senhaPura)).toString();
-
-    // Endpoint de cadastro
-    var url = Uri.parse('http://26.239.180.177:8020/register');
+    var url = Uri.parse('http://26.239.180.177:8020/verify-email');
 
     try {
       var response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "username": username,
-          "email": email,
-          "password_hash": passwordHash,
-          "hash_one": hashOne,
-          "hash_two": hashTwo,
-        }),
+        body: jsonEncode({"username": widget.username, "code": codigo}),
       );
 
       if (!mounted) return;
@@ -77,31 +42,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
         dados = jsonDecode(response.body);
       } catch (_) {}
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode == 200) {
         String msgSucesso =
-            dados['mensagem']?.toString() ??
-            dados['message']?.toString() ??
-            'OPERADOR CADASTRADO COM SUCESSO';
+            dados['mensagem']?.toString() ?? 'E-MAIL VERIFICADO COM SUCESSO!';
         _exibirStatus("SUCESSO: ${msgSucesso.toUpperCase()}");
 
-        // Redireciona para a tela de Verificação do E-mail
+        // Retorna até a tela de Login (limpando a pilha de navegação)
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => VerifyEmailScreen(username: username),
-              ),
-            );
+            Navigator.of(context).popUntil((route) => route.isFirst);
           }
         });
       } else {
-        // Exibe mensagem de erro retornada pelo servidor
         String msg =
             dados['mensagem'] ??
             dados['message'] ??
-            dados['error'] ??
-            'FALHA NO CADASTRO DO OPERADOR';
+            'CÓDIGO INVÁLIDO OU EXPIRADO';
         _exibirStatus("ERRO: ${msg.toString().toUpperCase()}", isError: true);
       }
     } catch (e) {
@@ -190,7 +146,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
                             return const Icon(
-                              Icons.star_outline,
+                              Icons.mark_email_read_outlined,
                               color: colorCyan,
                               size: 48,
                             );
@@ -207,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
                         Text(
-                          'CADASTRO DE NOVO OPERADOR v1.0',
+                          'ATIVAÇÃO DE CONTA v1.0',
                           style: GoogleFonts.shareTechMono(
                             fontSize: 10,
                             color: colorCyan.withValues(alpha: 0.8),
@@ -219,52 +175,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // --- CAMPO: ID DO OPERADOR ---
-                  _buildLabel('ID DO NOVO OPERADOR'),
-                  const SizedBox(height: 6),
-                  _buildTextField(
-                    controller: _operatorController,
-                    hintText: 'Nome do jogador',
-                    icon: Icons.person_add_outlined,
+                  // Mensagem Informativa
+                  Text(
+                    'Enviamos um código de 6 dígitos para o seu e-mail cadastrado. Informe o código abaixo para ativar o operador:',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 20),
 
-                  // --- CAMPO: E-MAIL DO OPERADOR ---
-                  _buildLabel('E-MAIL DO OPERADOR'),
+                  // --- CAMPO: CÓDIGO DE VALIDAÇÃO ---
+                  _buildLabel('CÓDIGO DE VALIDAÇÃO'),
                   const SizedBox(height: 6),
                   _buildTextField(
-                    controller: _emailController,
-                    hintText: 'operador@dominio.com',
-                    icon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 14),
-
-                  // --- CAMPO: CHAVE DE ACESSO ---
-                  _buildLabel('CHAVE DE ACESSO'),
-                  const SizedBox(height: 6),
-                  _buildTextField(
-                    controller: _accessKeyController,
-                    hintText: '••••••••',
-                    isPassword: true,
-                    icon: Icons.key_outlined,
-                  ),
-                  const SizedBox(height: 14),
-
-                  // --- CAMPO: CONFIRMAR CHAVE DE ACESSO ---
-                  _buildLabel('CONFIRMAR CHAVE DE ACESSO'),
-                  const SizedBox(height: 6),
-                  _buildTextField(
-                    controller: _confirmAccessKeyController,
-                    hintText: '••••••••',
-                    isPassword: true,
-                    icon: Icons.lock_outline,
+                    controller: _codeController,
+                    hintText: '123456',
+                    icon: Icons.pin_outlined,
+                    keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 24),
 
-                  // --- BOTÃO CADASTRAR ---
+                  // --- BOTÃO VALIDAR ---
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _cadastrarOperador,
+                    onPressed: _isLoading ? null : _validarCodigo,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0066FF),
                       foregroundColor: Colors.white,
@@ -286,7 +222,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                             )
                             : Text(
-                              'CADASTRAR OPERADOR',
+                              'ATIVAR CONTA',
                               style: GoogleFonts.shareTechMono(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -302,7 +238,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _buildFooterLink('VOLTAR AO LOGIN', () {
-                        Navigator.pop(context);
+                        Navigator.of(
+                          context,
+                        ).popUntil((route) => route.isFirst);
                       }),
                       Image.asset(
                         'assets/images/xama.png',
@@ -344,15 +282,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
-    bool isPassword = false,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
   }) {
     return TextField(
       controller: controller,
-      obscureText: isPassword,
       keyboardType: keyboardType,
-      style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 14),
+      style: GoogleFonts.shareTechMono(
+        color: Colors.white,
+        fontSize: 16,
+        letterSpacing: 3.0,
+      ),
+      textAlign: TextAlign.center,
       decoration: InputDecoration(
         prefixIcon: Icon(
           icon,
@@ -360,12 +301,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           size: 18,
         ),
         hintText: hintText,
-        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2)),
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.2),
+          letterSpacing: 3.0,
+        ),
         filled: true,
         fillColor: const Color(0xFF0A0E14),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 12,
+          vertical: 14,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
