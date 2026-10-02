@@ -160,17 +160,61 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
 
   Widget _buildHeader() {
     final op = _profileData!['operator'];
+    final String? avatarUrl = op['avatar_url'];
+
+    // Monta a URL da imagem. Se a API retornar ex: "/uploads/avatars/UID.png",
+    // ela é concatenada com a URL base da API.
+    final String fullAvatarUrl =
+        (avatarUrl != null && avatarUrl.isNotEmpty)
+            ? (avatarUrl.startsWith('http')
+                ? avatarUrl
+                : '${widget.apiBaseUrl}$avatarUrl')
+            : '';
+
     return Row(
       children: [
+        // Container do Avatar com borda ciano sci-fi
         Container(
           width: 50,
           height: 50,
+          clipBehavior:
+              Clip.antiAlias, // Garante que a imagem respeite as bordas arredondadas
           decoration: BoxDecoration(
-            color: Colors.grey.shade800,
+            color: Colors.grey.shade900,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: _cyanColor.withValues(alpha: 0.5)),
+            border: Border.all(
+              color: _cyanColor.withValues(alpha: 0.6),
+              width: 1.2,
+            ),
           ),
-          child: const Icon(Icons.person, color: Colors.white, size: 30),
+          child:
+              fullAvatarUrl.isNotEmpty
+                  ? Image.network(
+                    fullAvatarUrl,
+                    fit: BoxFit.cover,
+                    // Caso falhe ao carregar a imagem por HTTP, exibe o ícone padrão
+                    errorBuilder:
+                        (context, error, stackTrace) => const Icon(
+                          Icons.person,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                    // Efeito de carregamento suave
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: _cyanColor,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                  : const Icon(Icons.person, color: Colors.white, size: 30),
         ),
         const SizedBox(width: 12),
         Expanded(
