@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 
 class PlayerProfileScreen extends StatefulWidget {
   final int accountId;
@@ -19,6 +20,7 @@ class PlayerProfileScreen extends StatefulWidget {
 
 class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   bool _isLoading = true;
+  bool _isUploadingAvatar = false;
   String? _errorMessage;
   Map<String, dynamic>? _profileData;
 
@@ -65,6 +67,57 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
         _errorMessage = 'Erro de conexão: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Função para selecionar a imagem e realizar o upload para o servidor (Compatível com Web e Mobile/Desktop)
+  Future<void> _pickAndUploadAvatar() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return; // Seleção cancelada
+
+    setState(() {
+      _isUploadingAvatar = true;
+    });
+
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${widget.apiBaseUrl}/upload-avatar'),
+      );
+      request.fields['account_id'] = widget.accountId.toString();
+
+      // Lê os bytes do arquivo para ser 100% compatível com a Web (Chrome) e Mobile
+      final bytes = await image.readAsBytes();
+      request.files.add(
+        http.MultipartFile.fromBytes('avatar', bytes, filename: image.name),
+      );
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      // Verifica se o Widget ainda está ativo/montado antes de usar o BuildContext
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        await _fetchProfileData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Falha ao enviar o avatar.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erro no upload: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAvatar = false;
+        });
+      }
     }
   }
 
@@ -162,8 +215,6 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     final op = _profileData!['operator'];
     final String? avatarUrl = op['avatar_url'];
 
-    // Monta a URL da imagem. Se a API retornar ex: "/uploads/avatars/UID.png",
-    // ela é concatenada com a URL base da API.
     final String fullAvatarUrl =
         (avatarUrl != null && avatarUrl.isNotEmpty)
             ? (avatarUrl.startsWith('http')
@@ -173,36 +224,25 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
 
     return Row(
       children: [
-        // Container do Avatar com borda ciano sci-fi
-        Container(
-          width: 50,
-          height: 50,
-          clipBehavior:
-              Clip.antiAlias, // Garante que a imagem respeite as bordas arredondadas
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: _cyanColor.withValues(alpha: 0.6),
-              width: 1.2,
-            ),
-          ),
-          child:
-              fullAvatarUrl.isNotEmpty
-                  ? Image.network(
-                    fullAvatarUrl,
-                    fit: BoxFit.cover,
-                    // Caso falhe ao carregar a imagem por HTTP, exibe o ícone padrão
-                    errorBuilder:
-                        (context, error, stackTrace) => const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 30,
-                        ),
-                    // Efeito de carregamento suave
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return const Center(
+        Tooltip(
+          message: 'Clique para alterar a imagem do avatar',
+          child: GestureDetector(
+            onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+            child: Container(
+              width: 50,
+              height: 50,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade900,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: _cyanColor.withValues(alpha: 0.6),
+                  width: 1.2,
+                ),
+              ),
+              child:
+                  _isUploadingAvatar
+                      ? const Center(
                         child: SizedBox(
                           width: 18,
                           height: 18,
@@ -211,10 +251,34 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                             strokeWidth: 2,
                           ),
                         ),
-                      );
-                    },
-                  )
-                  : const Icon(Icons.person, color: Colors.white, size: 30),
+                      )
+                      : fullAvatarUrl.isNotEmpty
+                      ? Image.network(
+                        fullAvatarUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder:
+                            (context, error, stackTrace) => const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: _cyanColor,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          );
+                        },
+                      )
+                      : const Icon(Icons.person, color: Colors.white, size: 30),
+            ),
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
