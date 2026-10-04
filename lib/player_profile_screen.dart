@@ -11,7 +11,7 @@ class PlayerProfileScreen extends StatefulWidget {
   const PlayerProfileScreen({
     super.key,
     required this.accountId,
-    this.apiBaseUrl = 'http://10.0.2.2:8020',
+    this.apiBaseUrl = 'http://26.239.180.177:8020',
   });
 
   @override
@@ -82,36 +82,51 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     });
 
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${widget.apiBaseUrl}/upload-avatar'),
-      );
+      final uri = Uri.parse('${widget.apiBaseUrl}/upload-avatar');
+      var request = http.MultipartRequest('POST', uri);
+
+      // Passa o ID da conta nos campos do form
       request.fields['account_id'] = widget.accountId.toString();
 
-      // Lê os bytes do arquivo para ser 100% compatível com a Web (Chrome) e Mobile
+      // Lê os bytes para ser 100% compatível com a Web (Chrome)
       final bytes = await image.readAsBytes();
-      request.files.add(
-        http.MultipartFile.fromBytes('avatar', bytes, filename: image.name),
+      final multipartFile = http.MultipartFile.fromBytes(
+        'avatar',
+        bytes,
+        filename: image.name.isNotEmpty ? image.name : 'avatar.jpg',
       );
+
+      request.files.add(multipartFile);
 
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
 
-      // Verifica se o Widget ainda está ativo/montado antes de usar o BuildContext
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         await _fetchProfileData();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF00D2FF),
+            content: Text('AVATAR ATUALIZADO COM SUCESSO!'),
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Falha ao enviar o avatar.')),
+          SnackBar(
+            backgroundColor: const Color(0xFFFF2A6D),
+            content: Text('FALHA NO UPLOAD (${response.statusCode})'),
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erro no upload: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFFF2A6D),
+          content: Text('ERRO NO UPLOAD: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -212,14 +227,16 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildHeader() {
-    final op = _profileData!['operator'];
+    final op = _profileData?['operator'] ?? {};
     final String? avatarUrl = op['avatar_url'];
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
 
     final String fullAvatarUrl =
         (avatarUrl != null && avatarUrl.isNotEmpty)
             ? (avatarUrl.startsWith('http')
-                ? avatarUrl
-                : '${widget.apiBaseUrl}$avatarUrl')
+                ? '$avatarUrl?t=$timestamp'
+                : '${widget.apiBaseUrl}$avatarUrl?t=$timestamp')
             : '';
 
     return Row(
@@ -286,7 +303,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'OPERADOR: ${op['name']}',
+                'OPERADOR: ${op['name'] ?? 'N/A'}',
                 style: GoogleFonts.shareTechMono(
                   color: _cyanColor,
                   fontSize: 14,
@@ -295,7 +312,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'CORPORAÇÃO: ${op['corporation']}',
+                'CORPORAÇÃO: ${op['corporation'] ?? 'N/A'}',
                 style: GoogleFonts.shareTechMono(
                   color: _cyanColor,
                   fontSize: 14,
@@ -318,14 +335,14 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildLocationBar() {
-    final op = _profileData!['operator'];
+    final op = _profileData?['operator'] ?? {};
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
       ),
       child: Text(
-        'LOCALIZAÇÃO: ${op['location']}',
+        'LOCALIZAÇÃO: ${op['location'] ?? 'DESCONHECIDA'}',
         style: GoogleFonts.shareTechMono(
           color: Colors.white,
           fontSize: 13,
@@ -336,7 +353,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildCombatStatsBar() {
-    final stats = _profileData!['stats'];
+    final stats = _profileData?['stats'] ?? {};
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -346,15 +363,15 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'VITÓRIAS: ${stats['kills']}',
+            'VITÓRIAS: ${stats['kills'] ?? 0}',
             style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
           ),
           Text(
-            'DERROTAS: ${stats['deaths']}',
+            'DERROTAS: ${stats['deaths'] ?? 0}',
             style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
           ),
           Text(
-            'ASSISTÊNCIAS: ${stats['assists']}',
+            'ASSISTÊNCIAS: ${stats['assists'] ?? 0}',
             style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
           ),
         ],
@@ -363,13 +380,13 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildReputationPanel() {
-    final List reputations = _profileData!['reputations'];
+    final List reputations = _profileData?['reputations'] ?? [];
     return _buildOuterBox(
       title: 'REPUTAÇÃO:',
       child: Column(
         children:
             reputations.map((rep) {
-              final int val = rep['percentage'];
+              final int val = (rep['percentage'] ?? 0) as int;
               final bool isPositive = val >= 0;
               final Color barColor =
                   isPositive
@@ -383,7 +400,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                     SizedBox(
                       width: 120,
                       child: Text(
-                        rep['faction_name'].toString().toUpperCase(),
+                        (rep['faction_name'] ?? 'N/A').toString().toUpperCase(),
                         style: GoogleFonts.shareTechMono(
                           color: Colors.white,
                           fontSize: 12,
@@ -441,13 +458,13 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildSkillsPanel() {
-    final skills = _profileData!['skills'];
+    final skills = _profileData?['skills'] ?? {};
     final skillList = [
-      {'name': 'EXPLORADOR', 'val': skills['explorer']},
-      {'name': 'MINERADOR', 'val': skills['extractor']},
-      {'name': 'MERCADOR', 'val': skills['merchant']},
-      {'name': 'ENGENHEIRO', 'val': skills['engineer']},
-      {'name': 'MERCENÁRIO', 'val': skills['mercenary']},
+      {'name': 'EXPLORADOR', 'val': skills['explorer'] ?? 0},
+      {'name': 'MINERADOR', 'val': skills['extractor'] ?? 0},
+      {'name': 'MERCADOR', 'val': skills['merchant'] ?? 0},
+      {'name': 'ENGENHEIRO', 'val': skills['engineer'] ?? 0},
+      {'name': 'MERCENÁRIO', 'val': skills['mercenary'] ?? 0},
     ];
 
     const Color skillColor = Color(0xFF00FF66);
@@ -457,7 +474,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
       child: Column(
         children:
             skillList.map((skill) {
-              final int val = skill['val'];
+              final int val = (skill['val'] as num).toInt();
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Row(
@@ -600,8 +617,11 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     );
   }
 
-  String _formatCredits(int value) {
-    return value.toString().replaceAllMapped(
+  String _formatCredits(dynamic value) {
+    if (value == null) return '0';
+    final int parsedValue =
+        (value is num) ? value.toInt() : int.tryParse(value.toString()) ?? 0;
+    return parsedValue.toString().replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
       (Match m) => '${m[1]}.',
     );
