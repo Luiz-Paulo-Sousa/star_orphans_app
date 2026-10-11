@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'messaging_module_widget.dart';
 
 class PlayerProfileScreen extends StatefulWidget {
   final int accountId;
@@ -19,6 +20,9 @@ class PlayerProfileScreen extends StatefulWidget {
 }
 
 class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
+  // Índice da aba ativa no rodapé (0: PERFIL, 1: MENSAGENS, etc.)
+  int _selectedIndex = 0;
+
   bool _isLoading = true;
   bool _isUploadingAvatar = false;
   String? _errorMessage;
@@ -141,57 +145,123 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     return Scaffold(
       backgroundColor: _darkBg,
       body: SafeArea(
-        child:
-            _isLoading
-                ? const Center(
-                  child: CircularProgressIndicator(color: _cyanColor),
-                )
-                : _errorMessage != null
-                ? _buildErrorView()
-                : Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Column(
+          children: [
+            // Corpo dinâmico de acordo com a aba selecionada no rodapé
+            Expanded(child: _buildSelectedTabContent()),
+            // Rodapé com navegação segura entre as telas do jogo
+            _buildBottomNavigationBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Gerencia qual conteúdo exibir com base na aba selecionada no rodapé
+  Widget _buildSelectedTabContent() {
+    switch (_selectedIndex) {
+      case 0: // PERFIL
+        return _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _cyanColor))
+            : _errorMessage != null
+            ? _buildErrorView()
+            : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 12),
+                  _buildLocationBar(),
+                  const SizedBox(height: 12),
+                  _buildCombatStatsBar(),
+                  const SizedBox(height: 16),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth >= 800) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildHeader(),
-                            const SizedBox(height: 12),
-                            _buildLocationBar(),
-                            const SizedBox(height: 12),
-                            _buildCombatStatsBar(),
-                            const SizedBox(height: 16),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                if (constraints.maxWidth >= 800) {
-                                  return Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(child: _buildReputationPanel()),
-                                      const SizedBox(width: 16),
-                                      Expanded(child: _buildSkillsPanel()),
-                                    ],
-                                  );
-                                } else {
-                                  return Column(
-                                    children: [
-                                      _buildReputationPanel(),
-                                      const SizedBox(height: 16),
-                                      _buildSkillsPanel(),
-                                    ],
-                                  );
-                                }
-                              },
-                            ),
+                            Expanded(child: _buildReputationPanel()),
+                            const SizedBox(width: 16),
+                            Expanded(child: _buildSkillsPanel()),
                           ],
-                        ),
-                      ),
-                    ),
-                    _buildBottomNavigationBar(),
-                  ],
-                ),
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            _buildReputationPanel(),
+                            const SizedBox(height: 16),
+                            _buildSkillsPanel(),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+      case 1: // MENSAGENS
+        return MessagingModuleWidget(
+          profileData: _profileData,
+          apiBaseUrl: widget.apiBaseUrl,
+        );
+      case 2: // HANGAR
+        return _buildPlaceholderScreen('HANGAR DE NAVES E MÓDULOS');
+      case 3: // CONTRATOS
+        return _buildPlaceholderScreen('QUADRO DE CONTRATOS E MISSÕES');
+      case 4: // MERCADO
+        return _buildPlaceholderScreen('MERCADO GALÁCTICO DE SUPRIMENTOS');
+      case 5: // ESTOQUE
+        return _buildPlaceholderScreen('ESTOQUE DE CARGA E RECURSOS');
+      case 6: // FÁBRICA
+        return _buildPlaceholderScreen('FÁBRICA E LINHA DE PRODUÇÃO');
+      default:
+        return _buildPlaceholderScreen('TELA DESCONHECIDA');
+    }
+  }
+
+  /// Widget coringa com padrão visual sci-fi para abas em desenvolvimento (evita travar o app)
+  Widget _buildPlaceholderScreen(String title) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          border: Border.all(color: _cyanColor, width: 1.2),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '// STATUS DO SISTEMA:',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: GoogleFonts.shareTechMono(
+                color: _cyanColor,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '[ MÓDULO EM DESENVOLVIMENTO ]',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.greenAccent,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -572,47 +642,54 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
       'ESTOQUE',
       'FÁBRICA',
     ];
+
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       color: _darkBg,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children:
-            tabs.map((tab) {
-              final isSelected = tab == 'PERFIL';
-              return Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isSelected ? Colors.greenAccent : _cyanColor,
-                      width: isSelected ? 2.0 : 1.0,
-                    ),
-                    borderRadius: BorderRadius.circular(4),
+        children: List.generate(tabs.length, (index) {
+          final isSelected = index == _selectedIndex;
+          return Expanded(
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedIndex = index;
+                });
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: isSelected ? Colors.greenAccent : _cyanColor,
+                    width: isSelected ? 2.0 : 1.0,
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.square,
-                        size: 10,
-                        color: isSelected ? Colors.greenAccent : Colors.white,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        tab,
-                        style: GoogleFonts.shareTechMono(
-                          color: isSelected ? Colors.greenAccent : Colors.white,
-                          fontSize: 9,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              );
-            }).toList(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.square,
+                      size: 10,
+                      color: isSelected ? Colors.greenAccent : Colors.white,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      tabs[index],
+                      style: GoogleFonts.shareTechMono(
+                        color: isSelected ? Colors.greenAccent : Colors.white,
+                        fontSize: 9,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
