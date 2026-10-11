@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'messaging_module_widget.dart';
+import 'modules/messaging/messaging_module_widget.dart';
 
 class PlayerProfileScreen extends StatefulWidget {
   final int accountId;
