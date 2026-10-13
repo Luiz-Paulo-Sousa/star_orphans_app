@@ -30,48 +30,30 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   // Seleções ativas
   String _selectedChannel = 'EQUIPE';
-  String _selectedContact = 'BUSTER';
+  final String _selectedContact = 'BUSTER';
 
   // Estados para carregamento dinâmico dos canais
   List<dynamic> _channelsList = [];
   bool _isLoadingChannels = true;
   String? _channelsError;
 
+  // Estados para carregamento dinâmico das facções / sub-canais de coalizão
+  List<dynamic> _factionsList = [];
+  bool _isLoadingFactions = false;
+  int? _selectedFactionUid;
+
+  // Estados para mensagens dinâmicas
+  List<dynamic> _messagesList = [];
+  bool _isLoadingMessages = false;
+
   // Controller para o campo de envio de texto
   final TextEditingController _messageController = TextEditingController();
-
-  // Dados mockados de mensagens
-  final List<Map<String, dynamic>> _teamMessages = [
-    {
-      'timestamp': '26-09-01 18:47:25',
-      'sender': 'BUSTER',
-      'isMe': false,
-      'text': 'Nuvem de asteroides de Cobre localizada em Asgard!!!',
-    },
-    {
-      'timestamp': '26-09-01 18:47:45',
-      'sender': 'TROOPER',
-      'isMe': true,
-      'text': 'Passa as coordenadas!!!',
-    },
-    {
-      'timestamp': '26-09-01 18:50:35',
-      'sender': 'BUSTER',
-      'isMe': false,
-      'text': '-13782,+5290,+78492',
-    },
-    {
-      'timestamp': '26-09-01 18:51:14',
-      'sender': 'TROOPER',
-      'isMe': true,
-      'text': 'Obrigado!',
-    },
-  ];
 
   @override
   void initState() {
     super.initState();
     _fetchChannels();
+    _fetchFactions();
   }
 
   Future<void> _fetchChannels() async {
@@ -102,6 +84,75 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
+  Future<void> _fetchFactions() async {
+    setState(() {
+      _isLoadingFactions = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('${widget.apiBaseUrl}/api/factions'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _factionsList = data is List ? data : [];
+          if (_factionsList.isNotEmpty && _selectedFactionUid == null) {
+            _selectedFactionUid = _factionsList[0]['faction_uid'];
+            // Busca as mensagens da primeira facção por padrão
+            _fetchMessages(1, _selectedFactionUid!);
+          }
+        });
+      }
+    } catch (e) {
+      print('Erro ao carregar facções: $e');
+    } finally {
+      setState(() {
+        _isLoadingFactions = false;
+      });
+    }
+  }
+
+  Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
+    setState(() {
+      _isLoadingMessages = true;
+    });
+
+    // Extrai dinamicamente o UID da conta do perfil logado
+    final accountData = widget.profileData?['account'] ?? {};
+    final accountUid = accountData['uid'] ?? widget.profileData?['uid'] ?? '';
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${widget.apiBaseUrl}/api/messages/$channelUid/$subchannelUid?destinationUid=$accountUid',
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _messagesList = data is List ? data : [];
+        });
+      }
+    } catch (e) {
+      print('Erro ao carregar mensagens: $e');
+    } finally {
+      setState(() {
+        _isLoadingMessages = false;
+      });
+    }
+  }
+
+  // Retorna o nome da facção atualmente selecionada
+  String _getSelectedFactionName() {
+    if (_factionsList.isEmpty || _selectedFactionUid == null) return 'CENTRAL';
+    final faction = _factionsList.firstWhere(
+      (f) => f['faction_uid'] == _selectedFactionUid,
+      orElse: () => _factionsList[0],
+    );
+    return faction['name'] ?? 'CENTRAL';
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -110,10 +161,37 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Verifica se o canal atual é informativo (ex: COALIZÃO ou SETOR)
+    // Verifica se o canal atual é informativo (ex: COALIZÃO ou SUPORTE)
     final bool isReadonlyChannel =
         _activeTab == 'CONVERSAS' &&
         (_selectedChannel == 'COALIZÃO' || _selectedChannel == 'SETOR');
+
+    // Converte as mensagens vindas do banco para o formato esperado pelo ReadonlyChatView
+    final formattedMessages =
+        _messagesList.map((m) {
+          final senderName =
+              m['sender_account'] ?? m['sender_name'] ?? 'SISTEMA';
+          final myAccount =
+              widget.profileData?['operator']?['name'] ?? 'Trooper';
+          final isMe =
+              senderName.toString().toUpperCase() == myAccount.toUpperCase();
+
+          // Formata a data se necessário
+          String rawDate = m['date_time'] ?? '';
+          if (rawDate.length > 19) {
+            rawDate = rawDate.substring(0, 19).replaceAll('T', ' ');
+          }
+
+          return {
+            'timestamp': rawDate,
+            'sender': senderName,
+            'isMe': isMe,
+            'text': m['text'] ?? '',
+          };
+        }).toList();
+
+    // Nome dinâmico para o cabeçalho do ReadonlyChatView
+    final readonlyTitle = '${_getSelectedFactionName()} - INFORMA';
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -150,9 +228,19 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                             isLoading: _isLoadingChannels,
                             error: _channelsError,
                             selectedChannel: _selectedChannel,
-                            onChannelSelected:
-                                (canal) =>
-                                    setState(() => _selectedChannel = canal),
+                            onChannelSelected: (canal) {
+                              setState(() => _selectedChannel = canal);
+                            },
+                            factionsList: _factionsList,
+                            isLoadingFactions: _isLoadingFactions,
+                            selectedFactionUid: _selectedFactionUid,
+                            onFactionSelected: (factionUid) {
+                              setState(() {
+                                _selectedFactionUid = factionUid;
+                              });
+                              // Canal 1 (Coalizão) + Faction Uid selecionada
+                              _fetchMessages(1, factionUid);
+                            },
                           )
                           : _buildDirectMessagesLeftPanel(),
                 ),
@@ -160,17 +248,23 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                 Expanded(
                   child:
                       isReadonlyChannel
-                          ? ReadonlyChatView(
-                            channelName: _selectedChannel,
-                            messages: _teamMessages,
-                          )
+                          ? (_isLoadingMessages
+                              ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: _greenAccent,
+                                ),
+                              )
+                              : ReadonlyChatView(
+                                channelName: readonlyTitle,
+                                messages: formattedMessages,
+                              ))
                           : _buildInteractiveChatArea(),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          // O input de texto só aparece se não for um canal estritamente informativo
+          // O input de texto só aparece se NÃO for um canal informativo (Readonly)
           if (!isReadonlyChannel) _buildMessageInputField(),
         ],
       ),
@@ -359,36 +453,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           const SizedBox(height: 10),
           Expanded(
             child: ListView.builder(
-              itemCount: _teamMessages.length,
+              itemCount: 0,
               itemBuilder: (context, index) {
-                final msg = _teamMessages[index];
-                final bool isMe = msg['isMe'] as bool;
-                return Align(
-                  alignment:
-                      isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color:
-                          isMe
-                              ? const Color(0xFF0D2D23)
-                              : const Color(0xFF191D33),
-                      border: Border.all(
-                        color: isMe ? _greenAccent : _cyanColor,
-                        width: 0.8,
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '${msg['timestamp']} ${msg['sender']}: ${msg['text']}',
-                      style: GoogleFonts.shareTechMono(
-                        color: Colors.white,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                );
+                return Container();
               },
             ),
           ),
@@ -423,15 +490,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           ElevatedButton(
             onPressed: () {
               if (_messageController.text.trim().isNotEmpty) {
-                setState(() {
-                  _teamMessages.add({
-                    'timestamp': '26-09-01 18:52:00',
-                    'sender': 'TROOPER',
-                    'isMe': true,
-                    'text': _messageController.text.trim(),
-                  });
-                  _messageController.clear();
-                });
+                _messageController.clear();
               }
             },
             child: const Text('Enviar'),

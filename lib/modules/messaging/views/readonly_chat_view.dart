@@ -29,7 +29,7 @@ class ReadonlyChatView extends StatelessWidget {
           Row(
             children: [
               Text(
-                '$channelName (INFORMATIVO - APENAS LEITURA):',
+                '$channelName :',
                 style: GoogleFonts.shareTechMono(
                   color: Colors.amberAccent,
                   fontSize: 12,

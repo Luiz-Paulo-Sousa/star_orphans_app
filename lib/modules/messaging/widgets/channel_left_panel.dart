@@ -8,6 +8,12 @@ class ChannelLeftPanel extends StatelessWidget {
   final String selectedChannel;
   final ValueChanged<String> onChannelSelected;
 
+  // Novos parâmetros para as facções/coalizões
+  final List<dynamic> factionsList;
+  final bool isLoadingFactions;
+  final int? selectedFactionUid;
+  final ValueChanged<int> onFactionSelected;
+
   static const Color _cyanColor = Color(0xFF00D2FF);
   static const Color _greenAccent = Color(0xFF00FF66);
   static const Color _panelBg = Color(0xD912161F);
@@ -19,19 +25,20 @@ class ChannelLeftPanel extends StatelessWidget {
     required this.error,
     required this.selectedChannel,
     required this.onChannelSelected,
+    required this.factionsList,
+    required this.isLoadingFactions,
+    required this.selectedFactionUid,
+    required this.onFactionSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final equipe = [
-      {'name': 'BUSTER', 'online': true},
-      {'name': 'DOOM', 'online': false},
-      {'name': 'GUSTAVO', 'online': false},
-      {'name': 'RAZEK', 'online': false},
-    ];
+    // Verifica se o canal selecionado é Coalizão (ajuste o texto conforme está no banco, ex: 'COALIZÃO')
+    final bool isCoalition = selectedChannel.toUpperCase().contains('COALIZÃO');
 
     return Column(
       children: [
+        // Painel Superior: Canais Principais
         Expanded(
           child: Container(
             padding: const EdgeInsets.all(8),
@@ -132,6 +139,7 @@ class ChannelLeftPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+        // Painel Inferior: Dinâmico (Exibe Coalizões se for o canal COALIZÃO, senão exibe Equipe padrão)
         Expanded(
           child: Container(
             padding: const EdgeInsets.all(8),
@@ -144,7 +152,7 @@ class ChannelLeftPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'EQUIPE:',
+                  isCoalition ? 'COALIZÕES:' : 'EQUIPE:',
                   style: GoogleFonts.shareTechMono(
                     color: Colors.white,
                     fontSize: 12,
@@ -152,32 +160,96 @@ class ChannelLeftPanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                ...equipe.map((membro) {
-                  final bool isOnline = membro['online'] as bool;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.circle,
-                          size: 8,
-                          color: isOnline ? _greenAccent : Colors.grey,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            membro['name'] as String,
-                            style: GoogleFonts.shareTechMono(
-                              color: isOnline ? _greenAccent : Colors.grey,
-                              fontSize: 11,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                Expanded(
+                  child:
+                      isCoalition
+                          ? (isLoadingFactions
+                              ? const Center(
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: _greenAccent,
+                                  ),
+                                ),
+                              )
+                              : ListView.builder(
+                                itemCount: factionsList.length,
+                                itemBuilder: (context, index) {
+                                  final faction = factionsList[index];
+                                  final int factionUid = faction['faction_uid'];
+                                  final String factionName =
+                                      faction['name'] ?? '';
+                                  final bool isSelFaction =
+                                      selectedFactionUid == factionUid;
+
+                                  return InkWell(
+                                    onTap: () => onFactionSelected(factionUid),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4.0,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.circle,
+                                            size: 8,
+                                            color:
+                                                isSelFaction
+                                                    ? _greenAccent
+                                                    : Colors.grey,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              factionName,
+                                              style: GoogleFonts.shareTechMono(
+                                                color:
+                                                    isSelFaction
+                                                        ? _greenAccent
+                                                        : _cyanColor,
+                                                fontSize: 11,
+                                                fontWeight:
+                                                    isSelFaction
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ))
+                          : ListView(
+                            children: const [
+                              // Fallback temporário para os membros da equipe nos outros canais
+                              Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4.0),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.circle,
+                                      size: 8,
+                                      color: Colors.greenAccent,
+                                    ),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'BUSTER',
+                                      style: TextStyle(
+                                        color: Colors.greenAccent,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                ),
               ],
             ),
           ),
