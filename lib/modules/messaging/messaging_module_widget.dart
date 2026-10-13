@@ -99,7 +99,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           _factionsList = data is List ? data : [];
           if (_factionsList.isNotEmpty && _selectedFactionUid == null) {
             _selectedFactionUid = _factionsList[0]['faction_uid'];
-            // Busca as mensagens da primeira facção por padrão
             _fetchMessages(1, _selectedFactionUid!);
           }
         });
@@ -118,9 +117,20 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       _isLoadingMessages = true;
     });
 
-    // Extrai dinamicamente o UID da conta do perfil logado
-    final accountData = widget.profileData?['account'] ?? {};
-    final accountUid = accountData['uid'] ?? widget.profileData?['uid'] ?? '';
+    // Varredura abrangente em todas as chaves possíveis onde o UID da conta pode vir armazenado
+    final profile = widget.profileData ?? {};
+    final accountData = profile['account'] ?? {};
+    final operatorData = profile['operator'] ?? {};
+
+    final accountUid =
+        profile['uid'] ??
+        accountData['uid'] ??
+        operatorData['account_uid'] ??
+        operatorData['uid'] ??
+        '';
+
+    // Print de depuração para acompanhar no console do VS Code qual UID está sendo enviado
+    print('DEBUG MENSAGENS -> Buscando mensagens para accountUid: $accountUid');
 
     try {
       final response = await http.get(
@@ -143,7 +153,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  // Retorna o nome da facção atualmente selecionada
   String _getSelectedFactionName() {
     if (_factionsList.isEmpty || _selectedFactionUid == null) return 'CENTRAL';
     final faction = _factionsList.firstWhere(
@@ -161,22 +170,22 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Verifica se o canal atual é informativo (ex: COALIZÃO ou SUPORTE)
     final bool isReadonlyChannel =
         _activeTab == 'CONVERSAS' &&
         (_selectedChannel == 'COALIZÃO' || _selectedChannel == 'SETOR');
 
-    // Converte as mensagens vindas do banco para o formato esperado pelo ReadonlyChatView
     final formattedMessages =
         _messagesList.map((m) {
           final senderName =
               m['sender_account'] ?? m['sender_name'] ?? 'SISTEMA';
-          final myAccount =
-              widget.profileData?['operator']?['name'] ?? 'Trooper';
-          final isMe =
-              senderName.toString().toUpperCase() == myAccount.toUpperCase();
 
-          // Formata a data se necessário
+          final opData = widget.profileData?['operator'] ?? {};
+          final myAccount = opData['name'] ?? '';
+
+          final isMe =
+              senderName.toString().toUpperCase() ==
+              myAccount.toString().toUpperCase();
+
           String rawDate = m['date_time'] ?? '';
           if (rawDate.length > 19) {
             rawDate = rawDate.substring(0, 19).replaceAll('T', ' ');
@@ -190,22 +199,23 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           };
         }).toList();
 
-    // Nome dinâmico para o cabeçalho do ReadonlyChatView
     final readonlyTitle = '${_getSelectedFactionName()} - INFORMA';
 
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _buildLocationBar(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+
+          // Abas superiores (CONVERSAS / MENSAGENS)
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
-              width: 130,
+              width: 140,
               child: Row(
                 children: [
                   Expanded(child: _buildTopTab('CONVERSAS')),
@@ -215,56 +225,102 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+
+          // Layout Responsivo: verifica se a tela é estreita (Mobile < 600px) ou ampla (Desktop)
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: 130,
-                  child:
-                      _activeTab == 'CONVERSAS'
-                          ? ChannelLeftPanel(
-                            channelsList: _channelsList,
-                            isLoading: _isLoadingChannels,
-                            error: _channelsError,
-                            selectedChannel: _selectedChannel,
-                            onChannelSelected: (canal) {
-                              setState(() => _selectedChannel = canal);
-                            },
-                            factionsList: _factionsList,
-                            isLoadingFactions: _isLoadingFactions,
-                            selectedFactionUid: _selectedFactionUid,
-                            onFactionSelected: (factionUid) {
-                              setState(() {
-                                _selectedFactionUid = factionUid;
-                              });
-                              // Canal 1 (Coalizão) + Faction Uid selecionada
-                              _fetchMessages(1, factionUid);
-                            },
-                          )
-                          : _buildDirectMessagesLeftPanel(),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child:
-                      isReadonlyChannel
-                          ? (_isLoadingMessages
-                              ? const Center(
-                                child: CircularProgressIndicator(
-                                  color: _greenAccent,
-                                ),
-                              )
-                              : ReadonlyChatView(
-                                channelName: readonlyTitle,
-                                messages: formattedMessages,
-                              ))
-                          : _buildInteractiveChatArea(),
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isMobile = constraints.maxWidth < 600;
+
+                Widget chatWidget =
+                    isReadonlyChannel
+                        ? (_isLoadingMessages
+                            ? const Center(
+                              child: CircularProgressIndicator(
+                                color: _greenAccent,
+                              ),
+                            )
+                            : ReadonlyChatView(
+                              channelName: readonlyTitle,
+                              messages: formattedMessages,
+                            ))
+                        : _buildInteractiveChatArea();
+
+                if (isMobile) {
+                  // MODO MOBILE: Seletores lado a lado no topo com altura ajustada para 115 e Chat embaixo
+                  return Column(
+                    children: [
+                      SizedBox(
+                        height:
+                            115, // Altura perfeita para exibir os registros sem cortes
+                        child:
+                            _activeTab == 'CONVERSAS'
+                                ? ChannelLeftPanel(
+                                  channelsList: _channelsList,
+                                  isLoading: _isLoadingChannels,
+                                  error: _channelsError,
+                                  selectedChannel: _selectedChannel,
+                                  onChannelSelected: (canal) {
+                                    setState(() => _selectedChannel = canal);
+                                  },
+                                  factionsList: _factionsList,
+                                  isLoadingFactions: _isLoadingFactions,
+                                  selectedFactionUid: _selectedFactionUid,
+                                  onFactionSelected: (factionUid) {
+                                    setState(() {
+                                      _selectedFactionUid = factionUid;
+                                    });
+                                    _fetchMessages(1, factionUid);
+                                  },
+                                  isMobileLayout: true,
+                                )
+                                : _buildDirectMessagesLeftPanel(),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(child: chatWidget),
+                    ],
+                  );
+                } else {
+                  // MODO DESKTOP: Painel na esquerda, Chat na direita
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 160,
+                        child:
+                            _activeTab == 'CONVERSAS'
+                                ? ChannelLeftPanel(
+                                  channelsList: _channelsList,
+                                  isLoading: _isLoadingChannels,
+                                  error: _channelsError,
+                                  selectedChannel: _selectedChannel,
+                                  onChannelSelected: (canal) {
+                                    setState(() => _selectedChannel = canal);
+                                  },
+                                  factionsList: _factionsList,
+                                  isLoadingFactions: _isLoadingFactions,
+                                  selectedFactionUid: _selectedFactionUid,
+                                  onFactionSelected: (factionUid) {
+                                    setState(() {
+                                      _selectedFactionUid = factionUid;
+                                    });
+                                    _fetchMessages(1, factionUid);
+                                  },
+                                  isMobileLayout: false,
+                                )
+                                : _buildDirectMessagesLeftPanel(),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: chatWidget),
+                    ],
+                  );
+                }
+              },
             ),
           ),
-          const SizedBox(height: 12),
-          // O input de texto só aparece se NÃO for um canal informativo (Readonly)
+          const SizedBox(height: 8),
+
           if (!isReadonlyChannel) _buildMessageInputField(),
         ],
       ),
@@ -285,8 +341,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     return Row(
       children: [
         Container(
-          width: 50,
-          height: 50,
+          width: 45,
+          height: 45,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.grey.shade900,
@@ -305,12 +361,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                         (_, __, ___) => const Icon(
                           Icons.person,
                           color: Colors.white,
-                          size: 30,
+                          size: 26,
                         ),
                   )
-                  : const Icon(Icons.person, color: Colors.white, size: 30),
+                  : const Icon(Icons.person, color: Colors.white, size: 26),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -319,16 +375,16 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                 'OPERADOR: ${op['name'] ?? 'N/A'}',
                 style: GoogleFonts.shareTechMono(
                   color: _cyanColor,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 'CORPORAÇÃO: ${op['corporation'] ?? 'N/A'}',
                 style: GoogleFonts.shareTechMono(
                   color: _cyanColor,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -339,7 +395,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           'CRÉDITOS: ${_formatCredits(op['credits'])}',
           style: GoogleFonts.shareTechMono(
             color: _cyanColor,
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -350,7 +406,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   Widget _buildLocationBar() {
     final op = widget.profileData?['operator'] ?? {};
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
       ),
@@ -358,7 +414,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         'LOCALIZAÇÃO: ${op['location'] ?? 'DESCONHECIDA'}',
         style: GoogleFonts.shareTechMono(
           color: Colors.white,
-          fontSize: 13,
+          fontSize: 12,
           letterSpacing: 1.1,
         ),
       ),
@@ -370,7 +426,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     return InkWell(
       onTap: () => setState(() => _activeTab = title),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? _greenAccent : _cyanColor,
@@ -383,7 +439,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           title,
           style: GoogleFonts.shareTechMono(
             color: Colors.black,
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -414,7 +470,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           ...contatos.map(
             (c) => Text(
               c['name'] as String,

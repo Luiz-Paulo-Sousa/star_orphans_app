@@ -8,11 +8,14 @@ class ChannelLeftPanel extends StatelessWidget {
   final String selectedChannel;
   final ValueChanged<String> onChannelSelected;
 
-  // Novos parâmetros para as facções/coalizões
+  // Parâmetros para as facções/coalizões
   final List<dynamic> factionsList;
   final bool isLoadingFactions;
   final int? selectedFactionUid;
   final ValueChanged<int> onFactionSelected;
+
+  // Parâmetro para alternar entre lado a lado (mobile) e empilhado (desktop)
+  final bool isMobileLayout;
 
   static const Color _cyanColor = Color(0xFF00D2FF);
   static const Color _greenAccent = Color(0xFF00FF66);
@@ -29,44 +32,136 @@ class ChannelLeftPanel extends StatelessWidget {
     required this.isLoadingFactions,
     required this.selectedFactionUid,
     required this.onFactionSelected,
+    this.isMobileLayout = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Verifica se o canal selecionado é Coalizão (ajuste o texto conforme está no banco, ex: 'COALIZÃO')
     final bool isCoalition = selectedChannel.toUpperCase().contains('COALIZÃO');
 
-    return Column(
-      children: [
-        // Painel Superior: Canais Principais
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _panelBg,
-              border: Border.all(color: _greenAccent, width: 1.2),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.zero,
-                topRight: Radius.zero,
-                bottomLeft: Radius.circular(4),
-                bottomRight: Radius.circular(4),
+    // Altura fixa reduzida para exibir exatamente cerca de 4 linhas no modo mobile (~100px) com rolagem
+    final double? panelHeight = isMobileLayout ? 100.0 : null;
+
+    // Bloco do Painel de Canais Principais
+    final channelsWidget = SizedBox(
+      height: panelHeight,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          border: Border.all(color: _greenAccent, width: 1.2),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'CANAIS:',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CANAIS:',
-                  style: GoogleFonts.shareTechMono(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child:
-                      isLoading
+            const SizedBox(height: 4),
+            Expanded(
+              child:
+                  isLoading
+                      ? const Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _greenAccent,
+                          ),
+                        ),
+                      )
+                      : error != null
+                      ? Center(
+                        child: Text(
+                          'Erro ao carregar',
+                          style: GoogleFonts.shareTechMono(
+                            color: Colors.redAccent,
+                            fontSize: 10,
+                          ),
+                        ),
+                      )
+                      : ListView.builder(
+                        itemCount: channelsList.length,
+                        itemBuilder: (context, index) {
+                          final channelData = channelsList[index];
+                          final String canal =
+                              channelData['description'] ?? 'CANAL';
+                          final isSel = selectedChannel == canal;
+
+                          return InkWell(
+                            onTap: () => onChannelSelected(canal),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 2.0,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.circle,
+                                    size: 8,
+                                    color: isSel ? _greenAccent : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      canal,
+                                      style: GoogleFonts.shareTechMono(
+                                        color:
+                                            isSel ? _greenAccent : _cyanColor,
+                                        fontSize: 11,
+                                        fontWeight:
+                                            isSel
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Bloco do Painel de Coalizões / Equipe
+    final factionsWidget = SizedBox(
+      height: panelHeight,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          border: Border.all(color: _greenAccent, width: 1.2),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isCoalition ? 'COALIZÕES:' : 'EQUIPE:',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child:
+                  isCoalition
+                      ? (isLoadingFactions
                           ? const Center(
                             child: SizedBox(
                               width: 16,
@@ -77,29 +172,20 @@ class ChannelLeftPanel extends StatelessWidget {
                               ),
                             ),
                           )
-                          : error != null
-                          ? Center(
-                            child: Text(
-                              'Erro ao carregar',
-                              style: GoogleFonts.shareTechMono(
-                                color: Colors.redAccent,
-                                fontSize: 10,
-                              ),
-                            ),
-                          )
                           : ListView.builder(
-                            itemCount: channelsList.length,
+                            itemCount: factionsList.length,
                             itemBuilder: (context, index) {
-                              final channelData = channelsList[index];
-                              final String canal =
-                                  channelData['description'] ?? 'CANAL';
-                              final isSel = selectedChannel == canal;
+                              final faction = factionsList[index];
+                              final int factionUid = faction['faction_uid'];
+                              final String factionName = faction['name'] ?? '';
+                              final bool isSelFaction =
+                                  selectedFactionUid == factionUid;
 
                               return InkWell(
-                                onTap: () => onChannelSelected(canal),
+                                onTap: () => onFactionSelected(factionUid),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 4.0,
+                                    vertical: 2.0,
                                   ),
                                   child: Row(
                                     children: [
@@ -107,20 +193,22 @@ class ChannelLeftPanel extends StatelessWidget {
                                         Icons.circle,
                                         size: 8,
                                         color:
-                                            isSel ? _greenAccent : Colors.grey,
+                                            isSelFaction
+                                                ? _greenAccent
+                                                : Colors.grey,
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
-                                          canal,
+                                          factionName,
                                           style: GoogleFonts.shareTechMono(
                                             color:
-                                                isSel
+                                                isSelFaction
                                                     ? _greenAccent
                                                     : _cyanColor,
                                             fontSize: 11,
                                             fontWeight:
-                                                isSel
+                                                isSelFaction
                                                     ? FontWeight.bold
                                                     : FontWeight.normal,
                                           ),
@@ -132,129 +220,58 @@ class ChannelLeftPanel extends StatelessWidget {
                                 ),
                               );
                             },
-                          ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Painel Inferior: Dinâmico (Exibe Coalizões se for o canal COALIZÃO, senão exibe Equipe padrão)
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _panelBg,
-              border: Border.all(color: _greenAccent, width: 1.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isCoalition ? 'COALIZÕES:' : 'EQUIPE:',
-                  style: GoogleFonts.shareTechMono(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child:
-                      isCoalition
-                          ? (isLoadingFactions
-                              ? const Center(
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: _greenAccent,
+                          ))
+                      : ListView(
+                        children: const [
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.circle,
+                                  size: 8,
+                                  color: Colors.greenAccent,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'BUSTER',
+                                  style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontSize: 11,
                                   ),
                                 ),
-                              )
-                              : ListView.builder(
-                                itemCount: factionsList.length,
-                                itemBuilder: (context, index) {
-                                  final faction = factionsList[index];
-                                  final int factionUid = faction['faction_uid'];
-                                  final String factionName =
-                                      faction['name'] ?? '';
-                                  final bool isSelFaction =
-                                      selectedFactionUid == factionUid;
-
-                                  return InkWell(
-                                    onTap: () => onFactionSelected(factionUid),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 4.0,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.circle,
-                                            size: 8,
-                                            color:
-                                                isSelFaction
-                                                    ? _greenAccent
-                                                    : Colors.grey,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              factionName,
-                                              style: GoogleFonts.shareTechMono(
-                                                color:
-                                                    isSelFaction
-                                                        ? _greenAccent
-                                                        : _cyanColor,
-                                                fontSize: 11,
-                                                fontWeight:
-                                                    isSelFaction
-                                                        ? FontWeight.bold
-                                                        : FontWeight.normal,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ))
-                          : ListView(
-                            children: const [
-                              // Fallback temporário para os membros da equipe nos outros canais
-                              Padding(
-                                padding: EdgeInsets.symmetric(vertical: 4.0),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.circle,
-                                      size: 8,
-                                      color: Colors.greenAccent,
-                                    ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'BUSTER',
-                                      style: TextStyle(
-                                        color: Colors.greenAccent,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                ),
-              ],
+                        ],
+                      ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
+
+    // Se for layout mobile, exibe os dois blocos LADO A LADO com altura restrita a 4 linhas
+    if (isMobileLayout) {
+      return SizedBox(
+        height: 105,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: channelsWidget),
+            const SizedBox(width: 8),
+            Expanded(child: factionsWidget),
+          ],
+        ),
+      );
+    } else {
+      return Column(
+        children: [
+          Expanded(child: channelsWidget),
+          const SizedBox(height: 8),
+          Expanded(child: factionsWidget),
+        ],
+      );
+    }
   }
 }
