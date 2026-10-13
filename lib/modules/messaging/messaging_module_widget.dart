@@ -112,25 +112,34 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
+Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
     setState(() {
       _isLoadingMessages = true;
     });
 
-    // Varredura abrangente em todas as chaves possíveis onde o UID da conta pode vir armazenado
     final profile = widget.profileData ?? {};
     final accountData = profile['account'] ?? {};
     final operatorData = profile['operator'] ?? {};
 
+    // Captura o ID correto a partir de operator['account_id']
     final accountUid =
+        operatorData['account_id'] ??
         profile['uid'] ??
         accountData['uid'] ??
         operatorData['account_uid'] ??
         operatorData['uid'] ??
+        profile['account_uid'] ??
         '';
 
-    // Print de depuração para acompanhar no console do VS Code qual UID está sendo enviado
-    print('DEBUG MENSAGENS -> Buscando mensagens para accountUid: $accountUid');
+    print('DEBUG MENSAGENS -> accountUid extraído: "$accountUid"');
+
+    if (accountUid.toString().trim().isEmpty) {
+      setState(() {
+        _messagesList = [];
+        _isLoadingMessages = false;
+      });
+      return;
+    }
 
     try {
       final response = await http.get(
@@ -152,7 +161,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       });
     }
   }
-
+    
   String _getSelectedFactionName() {
     if (_factionsList.isEmpty || _selectedFactionUid == null) return 'CENTRAL';
     final faction = _factionsList.firstWhere(
@@ -237,44 +246,46 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                     isReadonlyChannel
                         ? (_isLoadingMessages
                             ? const Center(
-                              child: CircularProgressIndicator(
-                                color: _greenAccent,
-                              ),
-                            )
+                                child: CircularProgressIndicator(
+                                  color: _greenAccent,
+                                ),
+                              )
                             : ReadonlyChatView(
-                              channelName: readonlyTitle,
-                              messages: formattedMessages,
-                            ))
+                                channelName: readonlyTitle,
+                                messages: formattedMessages,
+                              ))
                         : _buildInteractiveChatArea();
 
                 if (isMobile) {
-                  // MODO MOBILE: Seletores lado a lado no topo com altura ajustada para 115 e Chat embaixo
+                  // MODO MOBILE: Seletores lado a lado no topo com altura ajustada para 100 e Chat embaixo
                   return Column(
                     children: [
                       SizedBox(
                         height:
-                            115, // Altura perfeita para exibir os registros sem cortes
+                            100, // Altura exata para acomodar as 4 linhas com rolagem
                         child:
                             _activeTab == 'CONVERSAS'
                                 ? ChannelLeftPanel(
-                                  channelsList: _channelsList,
-                                  isLoading: _isLoadingChannels,
-                                  error: _channelsError,
-                                  selectedChannel: _selectedChannel,
-                                  onChannelSelected: (canal) {
-                                    setState(() => _selectedChannel = canal);
-                                  },
-                                  factionsList: _factionsList,
-                                  isLoadingFactions: _isLoadingFactions,
-                                  selectedFactionUid: _selectedFactionUid,
-                                  onFactionSelected: (factionUid) {
-                                    setState(() {
-                                      _selectedFactionUid = factionUid;
-                                    });
-                                    _fetchMessages(1, factionUid);
-                                  },
-                                  isMobileLayout: true,
-                                )
+                                    channelsList: _channelsList,
+                                    isLoading: _isLoadingChannels,
+                                    error: _channelsError,
+                                    selectedChannel: _selectedChannel,
+                                    onChannelSelected: (canal) {
+                                      setState(
+                                        () => _selectedChannel = canal,
+                                      );
+                                    },
+                                    factionsList: _factionsList,
+                                    isLoadingFactions: _isLoadingFactions,
+                                    selectedFactionUid: _selectedFactionUid,
+                                    onFactionSelected: (factionUid) {
+                                      setState(() {
+                                        _selectedFactionUid = factionUid;
+                                      });
+                                      _fetchMessages(1, factionUid);
+                                    },
+                                    isMobileLayout: true,
+                                  )
                                 : _buildDirectMessagesLeftPanel(),
                       ),
                       const SizedBox(height: 8),
@@ -291,24 +302,26 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                         child:
                             _activeTab == 'CONVERSAS'
                                 ? ChannelLeftPanel(
-                                  channelsList: _channelsList,
-                                  isLoading: _isLoadingChannels,
-                                  error: _channelsError,
-                                  selectedChannel: _selectedChannel,
-                                  onChannelSelected: (canal) {
-                                    setState(() => _selectedChannel = canal);
-                                  },
-                                  factionsList: _factionsList,
-                                  isLoadingFactions: _isLoadingFactions,
-                                  selectedFactionUid: _selectedFactionUid,
-                                  onFactionSelected: (factionUid) {
-                                    setState(() {
-                                      _selectedFactionUid = factionUid;
-                                    });
-                                    _fetchMessages(1, factionUid);
-                                  },
-                                  isMobileLayout: false,
-                                )
+                                    channelsList: _channelsList,
+                                    isLoading: _isLoadingChannels,
+                                    error: _channelsError,
+                                    selectedChannel: _selectedChannel,
+                                    onChannelSelected: (canal) {
+                                      setState(
+                                        () => _selectedChannel = canal,
+                                      );
+                                    },
+                                    factionsList: _factionsList,
+                                    isLoadingFactions: _isLoadingFactions,
+                                    selectedFactionUid: _selectedFactionUid,
+                                    onFactionSelected: (factionUid) {
+                                      setState(() {
+                                        _selectedFactionUid = factionUid;
+                                      });
+                                      _fetchMessages(1, factionUid);
+                                    },
+                                    isMobileLayout: false,
+                                  )
                                 : _buildDirectMessagesLeftPanel(),
                       ),
                       const SizedBox(width: 12),
