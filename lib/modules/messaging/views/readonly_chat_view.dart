@@ -38,52 +38,68 @@ class ReadonlyChatView extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+          
+          // Envolvemos o ListView em Expanded para garantir que ele ocupe 
+          // apenas o espaço flexível disponível, evitando o overflow.
           Expanded(
-            child: ListView.builder(
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final msg = messages[index];
-                return Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF191D33),
-                      border: Border.all(color: _cyanColor, width: 0.8),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: RichText(
-                      text: TextSpan(
-                        style: GoogleFonts.shareTechMono(fontSize: 12),
-                        children: [
-                          TextSpan(
-                            text: '${msg['timestamp']} ',
-                            style: const TextStyle(color: _greenAccent),
-                          ),
-                          TextSpan(
-                            text: '${msg['sender']}: ',
-                            style: const TextStyle(
-                              color: Colors.amberAccent,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          TextSpan(
-                            text: msg['text'] as String,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ],
+            child: messages.isEmpty
+                ? Center(
+                    child: Text(
+                      'NENHUMA TRANSMISSÃO OFICIAL REGISTRADA',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white54,
+                        fontSize: 11,
                       ),
                     ),
+                  )
+                : ListView.builder(
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = messages[index];
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF191D33),
+                            border: Border.all(color: _cyanColor, width: 0.8),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: RichText(
+                            text: TextSpan(
+                              style: GoogleFonts.shareTechMono(fontSize: 12),
+                              children: [
+                                TextSpan(
+                                  text: '${msg['timestamp']} ',
+                                  style: const TextStyle(color: _greenAccent),
+                                ),
+                                TextSpan(
+                                  text: '${msg['sender']}: ',
+                                  style: const TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: msg['text'] as String,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
+          
           const SizedBox(height: 8),
+          
+          // Rodapé fixo mas seguro dentro do container flexível
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.black26,
@@ -91,11 +107,13 @@ class ReadonlyChatView extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              'TRANSMISSÃO OFICIAL — CANAL SEM PERMISSÃO DE TRANSMISSÃO DE RESPOSTA',
+              'TRANSMISSÃO OFICIAL — SEM PERMISSÃO DE RESPOSTA',
               style: GoogleFonts.shareTechMono(
                 color: Colors.grey,
                 fontSize: 10,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-import 'widgets/channel_left_panel.dart';
 import 'views/readonly_chat_view.dart';
 
 class MessagingModuleWidget extends StatefulWidget {
@@ -29,7 +28,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   String _activeTab = 'CONVERSAS';
 
   // Seleções ativas
-  String _selectedChannel = 'EQUIPE';
+  String _selectedChannel = 'COALIZÃO';
   final String _selectedContact = 'BUSTER';
 
   // Estados para carregamento dinâmico dos canais
@@ -41,6 +40,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   List<dynamic> _factionsList = [];
   bool _isLoadingFactions = false;
   int? _selectedFactionUid;
+
+  // Estado para o nome do setor atual e pilotos no setor
+  String _currentSectorName = 'AGARTHA';
 
   // Estados para mensagens dinâmicas
   List<dynamic> _messagesList = [];
@@ -54,6 +56,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     super.initState();
     _fetchChannels();
     _fetchFactions();
+    _fetchPilotSector();
   }
 
   Future<void> _fetchChannels() async {
@@ -66,8 +69,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         setState(() {
           _channelsList = data is List ? data : (data['channels'] ?? []);
           _isLoadingChannels = false;
-          if (_channelsList.isNotEmpty) {
-            _selectedChannel = _channelsList[0]['description'] ?? 'EQUIPE';
+          if (_channelsList.isNotEmpty && _selectedChannel.isEmpty) {
+            _selectedChannel = _channelsList[0]['description'] ?? 'COALIZÃO';
           }
         });
       } else {
@@ -112,7 +115,31 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
+  Future<void> _fetchPilotSector() async {
+    final profile = widget.profileData ?? {};
+    final operatorData = profile['operator'] ?? {};
+    final pilotUid =
+        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${widget.apiBaseUrl}/api/channels/pilot-sector/$pilotUid'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _currentSectorName = data['sectorName'] ?? 'AGARTHA';
+        });
+      }
+    } catch (e) {
+      print('Erro ao buscar setor do piloto: $e');
+      setState(() {
+        _currentSectorName = 'AGARTHA';
+      });
+    }
+  }
+
+  Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
     setState(() {
       _isLoadingMessages = true;
     });
@@ -121,7 +148,6 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
     final accountData = profile['account'] ?? {};
     final operatorData = profile['operator'] ?? {};
 
-    // Captura o ID correto a partir de operator['account_id']
     final accountUid =
         operatorData['account_id'] ??
         profile['uid'] ??
@@ -130,8 +156,6 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
         operatorData['uid'] ??
         profile['account_uid'] ??
         '';
-
-    print('DEBUG MENSAGENS -> accountUid extraído: "$accountUid"');
 
     if (accountUid.toString().trim().isEmpty) {
       setState(() {
@@ -161,7 +185,35 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
       });
     }
   }
-    
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    final opData = widget.profileData?['operator'] ?? {};
+    final senderId = opData['account_id'] ?? opData['uid'] ?? 1;
+
+    try {
+      final response = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/messages/send'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'subchannel_id': _selectedFactionUid ?? 1,
+          'sender_id': senderId,
+          'content': text,
+          'sector_coordinates': opData['location'] ?? 'SETOR-01',
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        _messageController.clear();
+        _fetchMessages(1, _selectedFactionUid ?? 1);
+      }
+    } catch (e) {
+      print('Erro ao enviar mensagem: $e');
+    }
+  }
+
   String _getSelectedFactionName() {
     if (_factionsList.isEmpty || _selectedFactionUid == null) return 'CENTRAL';
     final faction = _factionsList.firstWhere(
@@ -181,7 +233,7 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
   Widget build(BuildContext context) {
     final bool isReadonlyChannel =
         _activeTab == 'CONVERSAS' &&
-        (_selectedChannel == 'COALIZÃO' || _selectedChannel == 'SETOR');
+        _selectedChannel.toUpperCase() == 'COALIZÃO';
 
     final formattedMessages =
         _messagesList.map((m) {
@@ -208,7 +260,7 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
           };
         }).toList();
 
-    final readonlyTitle = '${_getSelectedFactionName()} - INFORMA';
+    final readonlyTitle = '${_getSelectedFactionName()} INFORMA';
 
     return Padding(
       padding: const EdgeInsets.all(12.0),
@@ -236,7 +288,7 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
           ),
           const SizedBox(height: 8),
 
-          // Layout Responsivo: verifica se a tela é estreita (Mobile < 600px) ou ampla (Desktop)
+          // Layout Responsivo
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -254,76 +306,23 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
                                 channelName: readonlyTitle,
                                 messages: formattedMessages,
                               ))
-                        : _buildInteractiveChatArea();
+                        : _buildInteractiveChatArea(formattedMessages);
+
+                Widget leftPanelsWidget = _buildLeftPanelsContainer(isMobile);
 
                 if (isMobile) {
-                  // MODO MOBILE: Seletores lado a lado no topo com altura ajustada para 100 e Chat embaixo
                   return Column(
                     children: [
-                      SizedBox(
-                        height:
-                            100, // Altura exata para acomodar as 4 linhas com rolagem
-                        child:
-                            _activeTab == 'CONVERSAS'
-                                ? ChannelLeftPanel(
-                                    channelsList: _channelsList,
-                                    isLoading: _isLoadingChannels,
-                                    error: _channelsError,
-                                    selectedChannel: _selectedChannel,
-                                    onChannelSelected: (canal) {
-                                      setState(
-                                        () => _selectedChannel = canal,
-                                      );
-                                    },
-                                    factionsList: _factionsList,
-                                    isLoadingFactions: _isLoadingFactions,
-                                    selectedFactionUid: _selectedFactionUid,
-                                    onFactionSelected: (factionUid) {
-                                      setState(() {
-                                        _selectedFactionUid = factionUid;
-                                      });
-                                      _fetchMessages(1, factionUid);
-                                    },
-                                    isMobileLayout: true,
-                                  )
-                                : _buildDirectMessagesLeftPanel(),
-                      ),
+                      SizedBox(height: 100, child: leftPanelsWidget),
                       const SizedBox(height: 8),
                       Expanded(child: chatWidget),
                     ],
                   );
                 } else {
-                  // MODO DESKTOP: Painel na esquerda, Chat na direita
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        width: 160,
-                        child:
-                            _activeTab == 'CONVERSAS'
-                                ? ChannelLeftPanel(
-                                    channelsList: _channelsList,
-                                    isLoading: _isLoadingChannels,
-                                    error: _channelsError,
-                                    selectedChannel: _selectedChannel,
-                                    onChannelSelected: (canal) {
-                                      setState(
-                                        () => _selectedChannel = canal,
-                                      );
-                                    },
-                                    factionsList: _factionsList,
-                                    isLoadingFactions: _isLoadingFactions,
-                                    selectedFactionUid: _selectedFactionUid,
-                                    onFactionSelected: (factionUid) {
-                                      setState(() {
-                                        _selectedFactionUid = factionUid;
-                                      });
-                                      _fetchMessages(1, factionUid);
-                                    },
-                                    isMobileLayout: false,
-                                  )
-                                : _buildDirectMessagesLeftPanel(),
-                      ),
+                      SizedBox(width: 260, child: leftPanelsWidget),
                       const SizedBox(width: 12),
                       Expanded(child: chatWidget),
                     ],
@@ -338,6 +337,241 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
         ],
       ),
     );
+  }
+
+  // Painel esquerdo inteligente: lado a lado no celular, coluna vertical no PC
+  Widget _buildLeftPanelsContainer(bool isMobile) {
+    if (_activeTab != 'CONVERSAS') {
+      return _buildDirectMessagesLeftPanel();
+    }
+
+    final channelsPanel = Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _greenAccent, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'CANAIS:',
+            style: GoogleFonts.shareTechMono(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: ListView(
+              children: [
+                _buildChannelItem('COALIZÃO'),
+                _buildChannelItem('SETOR'),
+                _buildChannelItem('CORPORAÇÃO'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final subchannelsPanel = Container(
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _greenAccent, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: _buildSubchannelsPanelForSelectedChannelContent(),
+    );
+
+    if (isMobile) {
+      // Celular: Lado a lado (Row)
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: channelsPanel),
+          const SizedBox(width: 8),
+          Expanded(child: subchannelsPanel),
+        ],
+      );
+    } else {
+      // PC: Uma sobre a outra (Column) preenchendo toda a altura
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: 1, child: channelsPanel),
+          const SizedBox(height: 8),
+          Expanded(flex: 1, child: subchannelsPanel),
+        ],
+      );
+    }
+  }
+
+  Widget _buildChannelItem(String channelName) {
+    final isSelected =
+        _selectedChannel.toUpperCase() == channelName.toUpperCase();
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedChannel = channelName;
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3.0),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: isSelected ? _greenAccent : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              channelName,
+              style: GoogleFonts.shareTechMono(
+                color: isSelected ? _greenAccent : Colors.white,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Conteúdo interno do painel de sub-canais
+  Widget _buildSubchannelsPanelForSelectedChannelContent() {
+    final channelUpper = _selectedChannel.toUpperCase();
+
+    if (channelUpper == 'SETOR') {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _currentSectorName.toUpperCase(),
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: _greenAccent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'BUSTER',
+                          style: GoogleFonts.shareTechMono(
+                            color: _greenAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (channelUpper == 'CORPORAÇÃO') {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'CORPORAÇÃO:',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Nenhum membro',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white54,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'COALIZÕES:',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: ListView(
+                children:
+                    _factionsList.map((f) {
+                      final isSelected =
+                          f['faction_uid'] == _selectedFactionUid;
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedFactionUid = f['faction_uid'];
+                          });
+                          _fetchMessages(1, f['faction_uid']);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3.0),
+                          child: Text(
+                            (f['name'] ?? '').toUpperCase(),
+                            style: GoogleFonts.shareTechMono(
+                              color: isSelected ? _greenAccent : Colors.white,
+                              fontSize: 11,
+                              fontWeight:
+                                  isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildHeader() {
@@ -498,7 +732,7 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
     );
   }
 
-  Widget _buildInteractiveChatArea() {
+  Widget _buildInteractiveChatArea(List<Map<String, dynamic>> messages) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -521,12 +755,65 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ListView.builder(
-              itemCount: 0,
-              itemBuilder: (context, index) {
-                return Container();
-              },
-            ),
+            child:
+                _isLoadingMessages
+                    ? const Center(
+                        child: CircularProgressIndicator(color: _cyanColor),
+                      )
+                    : messages.isEmpty
+                    ? Center(
+                        child: Text(
+                          'NENHUMA TRANSMISSÃO REGISTRADA',
+                          style: GoogleFonts.shareTechMono(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = messages[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '[${msg['timestamp']}] ',
+                                      style: GoogleFonts.shareTechMono(
+                                        color: Colors.white38,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${msg['sender']}:',
+                                      style: GoogleFonts.shareTechMono(
+                                        color:
+                                            msg['isMe']
+                                                ? _greenAccent
+                                                : _cyanColor,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  msg['text'],
+                                  style: GoogleFonts.shareTechMono(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
           ),
         ],
       ),
@@ -550,19 +837,20 @@ Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
                 color: Colors.white,
                 fontSize: 13,
               ),
-              decoration: const InputDecoration(
-                hintText: 'Digite sua mensagem...',
+              decoration: InputDecoration(
+                hintText: 'Transmitir mensagem para o canal...',
+                hintStyle: GoogleFonts.shareTechMono(
+                  color: Colors.white38,
+                  fontSize: 13,
+                ),
                 border: InputBorder.none,
               ),
+              onSubmitted: (_) => _sendMessage(),
             ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_messageController.text.trim().isNotEmpty) {
-                _messageController.clear();
-              }
-            },
-            child: const Text('Enviar'),
+          IconButton(
+            icon: const Icon(Icons.send, color: _cyanColor),
+            onPressed: _sendMessage,
           ),
         ],
       ),
