@@ -31,18 +31,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   String _selectedChannel = 'COALIZÃO';
   final String _selectedContact = 'BUSTER';
 
-  // Estados para carregamento dinâmico dos canais
-  List<dynamic> _channelsList = [];
-  bool _isLoadingChannels = true;
-  String? _channelsError;
+  // Sub-canais dinâmicos de acordo com o canal selecionado
+  List<dynamic> _subchannelsList = [];
+  bool _isLoadingSubchannels = false;
+  int? _selectedSubchannelUid;
 
-  // Estados para carregamento dinâmico das facções / sub-canais de coalizão
-  List<dynamic> _factionsList = [];
-  bool _isLoadingFactions = false;
-  int? _selectedFactionUid;
-
-  // Estado para o nome do setor atual e pilotos no setor
+  // Estado para o setor atual
   String _currentSectorName = 'AGARTHA';
+  int _currentSectorUid = 2;
 
   // Estados para mensagens dinâmicas
   List<dynamic> _messagesList = [];
@@ -54,65 +50,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   @override
   void initState() {
     super.initState();
-    _fetchChannels();
-    _fetchFactions();
     _fetchPilotSector();
-  }
-
-  Future<void> _fetchChannels() async {
-    try {
-      final response = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/message-channels'),
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _channelsList = data is List ? data : (data['channels'] ?? []);
-          _isLoadingChannels = false;
-          if (_channelsList.isNotEmpty && _selectedChannel.isEmpty) {
-            _selectedChannel = _channelsList[0]['description'] ?? 'COALIZÃO';
-          }
-        });
-      } else {
-        setState(() {
-          _channelsError = 'Erro HTTP: ${response.statusCode}';
-          _isLoadingChannels = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _channelsError = 'Falha de conexão';
-        _isLoadingChannels = false;
-      });
-    }
-  }
-
-  Future<void> _fetchFactions() async {
-    setState(() {
-      _isLoadingFactions = true;
-    });
-
-    try {
-      final response = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/factions'),
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _factionsList = data is List ? data : [];
-          if (_factionsList.isNotEmpty && _selectedFactionUid == null) {
-            _selectedFactionUid = _factionsList[0]['faction_uid'];
-            _fetchMessages(1, _selectedFactionUid!);
-          }
-        });
-      }
-    } catch (e) {
-      print('Erro ao carregar facções: $e');
-    } finally {
-      setState(() {
-        _isLoadingFactions = false;
-      });
-    }
+    _fetchSubchannelsForCurrentChannel();
   }
 
   Future<void> _fetchPilotSector() async {
@@ -129,12 +68,108 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         final data = jsonDecode(response.body);
         setState(() {
           _currentSectorName = data['sectorName'] ?? 'AGARTHA';
+          _currentSectorUid = data['sectorUid'] ?? 2;
         });
       }
     } catch (e) {
       print('Erro ao buscar setor do piloto: $e');
+    }
+  }
+
+  // Consulta o banco de dados dinamicamente com base no canal selecionado
+  Future<void> _fetchSubchannelsForCurrentChannel() async {
+    setState(() {
+      _isLoadingSubchannels = true;
+      _subchannelsList = [];
+      _selectedSubchannelUid = null;
+    });
+
+    final channelUpper = _selectedChannel.toUpperCase();
+
+    try {
+      if (channelUpper == 'COALIZÃO') {
+        // Busca facções no backend
+        final response = await http.get(
+          Uri.parse('${widget.apiBaseUrl}/api/factions'),
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final list = data is List ? data : [];
+          setState(() {
+            _subchannelsList = list;
+            if (list.isNotEmpty) {
+              _selectedSubchannelUid = list[0]['faction_uid'];
+              _fetchMessages(1, _selectedSubchannelUid!);
+            }
+          });
+        }
+      } else if (channelUpper == 'SETOR') {
+        final profile = widget.profileData ?? {};
+        final operatorData = profile['operator'] ?? {};
+        final pilotUid =
+            operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
+
+        final response = await http.get(
+          Uri.parse(
+            '${widget.apiBaseUrl}/api/channels/sector-pilots/$pilotUid',
+          ),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final list = data is List ? data : (data['pilots'] ?? []);
+
+          setState(() {
+            _subchannelsList = list;
+            if (list.isNotEmpty) {
+              // Lê corretamente 'pilot_uid' que vem do banco
+              _selectedSubchannelUid = list[0]['pilot_uid'];
+              _fetchMessages(2, _selectedSubchannelUid!);
+            }
+          });
+        }
+      } else if (channelUpper == 'CORPORAÇÃO') {
+        final op = widget.profileData?['operator'] ?? {};
+        final corp =
+            (op['corporation'] ?? 'Freelancer').toString().toUpperCase();
+
+        if (corp == 'FREELANCER') {
+          setState(() {
+            _subchannelsList = [];
+            _messagesList = [];
+          });
+        } else {
+          // Busca membros da corporação se houver
+          final response = await http.get(
+            Uri.parse('${widget.apiBaseUrl}/api/corporations/members'),
+          );
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            setState(() {
+              _subchannelsList = data is List ? data : [];
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Erro ao carregar sub-canais para $_selectedChannel: $e');
+      // Fallback para o Setor caso ocorra erro de rede na rota específica
+      if (channelUpper == 'SETOR') {
+        setState(() {
+          _subchannelsList = [
+            {
+              'pilot_uid': 536870917,
+              'pilot_name': 'BUSTER',
+              'sector': _currentSectorUid,
+            },
+          ];
+          _selectedSubchannelUid = 536870917;
+        });
+        _fetchMessages(2, 536870917);
+      }
+    } finally {
       setState(() {
-        _currentSectorName = 'AGARTHA';
+        _isLoadingSubchannels = false;
       });
     }
   }
@@ -145,25 +180,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     });
 
     final profile = widget.profileData ?? {};
-    final accountData = profile['account'] ?? {};
     final operatorData = profile['operator'] ?? {};
-
     final accountUid =
-        operatorData['account_id'] ??
-        profile['uid'] ??
-        accountData['uid'] ??
-        operatorData['account_uid'] ??
-        operatorData['uid'] ??
-        profile['account_uid'] ??
-        '';
-
-    if (accountUid.toString().trim().isEmpty) {
-      setState(() {
-        _messagesList = [];
-        _isLoadingMessages = false;
-      });
-      return;
-    }
+        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
 
     try {
       final response = await http.get(
@@ -176,9 +195,16 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         setState(() {
           _messagesList = data is List ? data : [];
         });
+      } else {
+        setState(() {
+          _messagesList = [];
+        });
       }
     } catch (e) {
       print('Erro ao carregar mensagens: $e');
+      setState(() {
+        _messagesList = [];
+      });
     } finally {
       setState(() {
         _isLoadingMessages = false;
@@ -188,17 +214,28 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _selectedSubchannelUid == null) return;
 
     final opData = widget.profileData?['operator'] ?? {};
-    final senderId = opData['account_id'] ?? opData['uid'] ?? 1;
+    final senderId = opData['account_id'] ?? opData['uid'] ?? 536870915;
+
+    int channelUid = 1;
+    final channelUpper = _selectedChannel.toUpperCase();
+    if (channelUpper == 'COALIZÃO') {
+      return; // Coalizão é estritamente leitura
+    } else if (channelUpper == 'SETOR') {
+      channelUid = 2;
+    } else if (channelUpper == 'CORPORAÇÃO') {
+      channelUid = 3;
+    }
 
     try {
       final response = await http.post(
         Uri.parse('${widget.apiBaseUrl}/api/messages/send'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'subchannel_id': _selectedFactionUid ?? 1,
+          'channel_id': channelUid,
+          'subchannel_id': _selectedSubchannelUid,
           'sender_id': senderId,
           'content': text,
           'sector_coordinates': opData['location'] ?? 'SETOR-01',
@@ -207,20 +244,36 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
       if (response.statusCode == 201) {
         _messageController.clear();
-        _fetchMessages(1, _selectedFactionUid ?? 1);
+        _fetchMessages(channelUid, _selectedSubchannelUid!);
       }
     } catch (e) {
       print('Erro ao enviar mensagem: $e');
     }
   }
 
-  String _getSelectedFactionName() {
-    if (_factionsList.isEmpty || _selectedFactionUid == null) return 'CENTRAL';
-    final faction = _factionsList.firstWhere(
-      (f) => f['faction_uid'] == _selectedFactionUid,
-      orElse: () => _factionsList[0],
-    );
-    return faction['name'] ?? 'CENTRAL';
+  String _getSelectedSubchannelName() {
+    if (_subchannelsList.isEmpty || _selectedSubchannelUid == null)
+      return 'CENTRAL';
+    try {
+      final sub = _subchannelsList.firstWhere(
+        (s) =>
+            (s['faction_uid'] ??
+                s['pilot_uid'] ??
+                s['uid'] ??
+                s['member_uid']) ==
+            _selectedSubchannelUid,
+        orElse: () => _subchannelsList[0],
+      );
+      // 'pilot' é a coluna correta da sua tabela pilots no MariaDB!
+      return (sub['pilot'] ??
+              sub['name'] ??
+              sub['pilot_name'] ??
+              sub['username'] ??
+              'CENTRAL')
+          .toString();
+    } catch (_) {
+      return 'CENTRAL';
+    }
   }
 
   @override
@@ -260,7 +313,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           };
         }).toList();
 
-    final readonlyTitle = '${_getSelectedFactionName()} INFORMA';
+    final readonlyTitle = '${_getSelectedSubchannelName()} INFORMA';
 
     return Padding(
       padding: const EdgeInsets.all(12.0),
@@ -272,7 +325,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           _buildLocationBar(),
           const SizedBox(height: 8),
 
-          // Abas superiores (CONVERSAS / MENSAGENS)
+          // Abas superiores
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
@@ -288,7 +341,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           ),
           const SizedBox(height: 8),
 
-          // Layout Responsivo
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -298,14 +350,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                     isReadonlyChannel
                         ? (_isLoadingMessages
                             ? const Center(
-                                child: CircularProgressIndicator(
-                                  color: _greenAccent,
-                                ),
-                              )
+                              child: CircularProgressIndicator(
+                                color: _greenAccent,
+                              ),
+                            )
                             : ReadonlyChatView(
-                                channelName: readonlyTitle,
-                                messages: formattedMessages,
-                              ))
+                              channelName: readonlyTitle,
+                              messages: formattedMessages,
+                            ))
                         : _buildInteractiveChatArea(formattedMessages);
 
                 Widget leftPanelsWidget = _buildLeftPanelsContainer(isMobile);
@@ -339,7 +391,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Painel esquerdo inteligente: lado a lado no celular, coluna vertical no PC
   Widget _buildLeftPanelsContainer(bool isMobile) {
     if (_activeTab != 'CONVERSAS') {
       return _buildDirectMessagesLeftPanel();
@@ -378,16 +429,16 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
 
     final subchannelsPanel = Container(
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: _panelBg,
         border: Border.all(color: _greenAccent, width: 1.2),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: _buildSubchannelsPanelForSelectedChannelContent(),
+      child: _buildSubchannelsPanelContent(),
     );
 
     if (isMobile) {
-      // Celular: Lado a lado (Row)
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -397,7 +448,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         ],
       );
     } else {
-      // PC: Uma sobre a outra (Column) preenchendo toda a altura
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -417,6 +467,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         setState(() {
           _selectedChannel = channelName;
         });
+        _fetchSubchannelsForCurrentChannel();
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 3.0),
@@ -445,133 +496,120 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Conteúdo interno do painel de sub-canais
-  Widget _buildSubchannelsPanelForSelectedChannelContent() {
+  Widget _buildSubchannelsPanelContent() {
     final channelUpper = _selectedChannel.toUpperCase();
+    String titleLabel = 'SUB-CANAIS:';
 
     if (channelUpper == 'SETOR') {
-      return Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _currentSectorName.toUpperCase(),
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: ListView(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3.0),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: _greenAccent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'BUSTER',
-                          style: GoogleFonts.shareTechMono(
-                            color: _greenAccent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+      titleLabel = _currentSectorName.toUpperCase();
     } else if (channelUpper == 'CORPORAÇÃO') {
-      return Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'CORPORAÇÃO:',
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Nenhum membro',
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white54,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      );
+      titleLabel = 'CORPORAÇÃO:';
     } else {
-      return Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'COALIZÕES:',
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: ListView(
-                children:
-                    _factionsList.map((f) {
-                      final isSelected =
-                          f['faction_uid'] == _selectedFactionUid;
-                      return InkWell(
-                        onTap: () {
-                          setState(() {
-                            _selectedFactionUid = f['faction_uid'];
-                          });
-                          _fetchMessages(1, f['faction_uid']);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3.0),
-                          child: Text(
-                            (f['name'] ?? '').toUpperCase(),
-                            style: GoogleFonts.shareTechMono(
-                              color: isSelected ? _greenAccent : Colors.white,
-                              fontSize: 11,
-                              fontWeight:
-                                  isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-              ),
-            ),
-          ],
-        ),
-      );
+      titleLabel = 'COALIZÕES:';
     }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          titleLabel,
+          style: GoogleFonts.shareTechMono(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child:
+              _isLoadingSubchannels
+                  ? const Center(
+                    child: CircularProgressIndicator(
+                      color: _greenAccent,
+                      strokeWidth: 2,
+                    ),
+                  )
+                  : _subchannelsList.isEmpty
+                  ? Text(
+                    channelUpper == 'CORPORAÇÃO'
+                        ? 'Nenhum membro'
+                        : 'Nenhum registro',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                  )
+                  : ListView(
+                    children:
+                        _subchannelsList.map((item) {
+                          final itemId =
+                              item['faction_uid'] ??
+                              item['pilot_uid'] ??
+                              item['uid'] ??
+                              item['member_uid'];
+                          final itemName =
+                              (item['name'] ??
+                                      item['pilot_name'] ??
+                                      item['username'] ??
+                                      'DESCONHECIDO')
+                                  .toString()
+                                  .toUpperCase();
+                          final isSelected = itemId == _selectedSubchannelUid;
+
+                          int channelId = 1;
+                          if (channelUpper == 'SETOR') channelId = 2;
+                          if (channelUpper == 'CORPORAÇÃO') channelId = 3;
+
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedSubchannelUid = itemId;
+                              });
+                              _fetchMessages(channelId, itemId);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 3.0,
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          isSelected
+                                              ? _greenAccent
+                                              : Colors.transparent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      itemName,
+                                      style: GoogleFonts.shareTechMono(
+                                        color:
+                                            isSelected
+                                                ? _greenAccent
+                                                : Colors.white,
+                                        fontSize: 11,
+                                        fontWeight:
+                                            isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+        ),
+      ],
+    );
   }
 
   Widget _buildHeader() {
@@ -758,62 +796,64 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             child:
                 _isLoadingMessages
                     ? const Center(
-                        child: CircularProgressIndicator(color: _cyanColor),
-                      )
+                      child: CircularProgressIndicator(color: _cyanColor),
+                    )
                     : messages.isEmpty
                     ? Center(
-                        child: Text(
-                          'NENHUMA TRANSMISSÃO REGISTRADA',
-                          style: GoogleFonts.shareTechMono(
-                            color: Colors.white54,
-                            fontSize: 11,
-                          ),
+                      child: Text(
+                        _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
+                            ? 'NENHUM MEMBRO NA CORPORAÇÃO'
+                            : 'NENHUMA TRANSMISSÃO REGISTRADA',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white54,
+                          fontSize: 11,
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = messages[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      '[${msg['timestamp']}] ',
-                                      style: GoogleFonts.shareTechMono(
-                                        color: Colors.white38,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${msg['sender']}:',
-                                      style: GoogleFonts.shareTechMono(
-                                        color:
-                                            msg['isMe']
-                                                ? _greenAccent
-                                                : _cyanColor,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  msg['text'],
-                                  style: GoogleFonts.shareTechMono(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
                       ),
+                    )
+                    : ListView.builder(
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = messages[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    '[${msg['timestamp']}] ',
+                                    style: GoogleFonts.shareTechMono(
+                                      color: Colors.white38,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${msg['sender']}:',
+                                    style: GoogleFonts.shareTechMono(
+                                      color:
+                                          msg['isMe']
+                                              ? _greenAccent
+                                              : _cyanColor,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                msg['text'],
+                                style: GoogleFonts.shareTechMono(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
