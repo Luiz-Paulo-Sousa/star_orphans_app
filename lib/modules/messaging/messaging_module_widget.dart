@@ -121,14 +121,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
           setState(() {
             _subchannelsList = list;
-            if (list.isNotEmpty) {
-              _selectedSubchannelUid =
-                  list[0]['pilot_uid'] ??
-                  list[0]['uid'] ??
-                  list[0]['account_id'];
-              _fetchMessages(2, _selectedSubchannelUid!);
-            }
           });
+
+          // CORREÇÃO: Garante que as mensagens do setor sejam buscadas imediatamente ao carregar o canal
+          _fetchMessages(2, _currentSectorUid);
         }
       } else if (channelUpper == 'CORPORAÇÃO') {
         final op = widget.profileData?['operator'] ?? {};
@@ -164,9 +160,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               'sector': _currentSectorUid,
             },
           ];
-          _selectedSubchannelUid = 536870917;
         });
-        _fetchMessages(2, 536870917);
+        _fetchMessages(2, _currentSectorUid);
       }
     } finally {
       setState(() {
@@ -222,14 +217,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     // Coalizão é estritamente leitura
     if (channelUpper == 'COALIZÃO') return;
 
-    // Se for Setor, o subcanal é o ID do setor atual. Se for Corporação, exige ID selecionado.
     int channelUid = 1;
     int targetSubchannel = 1;
 
     if (channelUpper == 'SETOR') {
       channelUid = 2;
-      targetSubchannel =
-          _currentSectorUid; // Usa o ID do setor (ex: Agartha = 2)
+      targetSubchannel = _currentSectorUid;
     } else if (channelUpper == 'CORPORAÇÃO') {
       if (_selectedSubchannelUid == null) return;
       channelUid = 3;
@@ -257,10 +250,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
       if (response.statusCode == 201) {
         _messageController.clear();
-        // Atualiza a lista de mensagens imediatamente após o envio
         _fetchMessages(channelUid, targetSubchannel);
-      } else {
-        print('Erro ao enviar: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       print('Exceção ao enviar mensagem: $e');
@@ -577,7 +567,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
                           final isSelected = itemId == _selectedSubchannelUid;
 
-                          // No canal de setor, removemos o destaque verde individual para evitar confusão de DM
                           final bool highlightSelected =
                               isSectorChannel ? false : isSelected;
 
