@@ -47,11 +47,22 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   // Controller para o campo de envio de texto
   final TextEditingController _messageController = TextEditingController();
 
+  // Controller de scroll para manter o chat nas mensagens mais recentes
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _fetchPilotSector();
     _fetchSubchannelsForCurrentChannel();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
   Future<void> _fetchPilotSector() async {
@@ -88,7 +99,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     try {
       if (channelUpper == 'COALIZÃO') {
-        // Busca facções no backend
         final response = await http.get(
           Uri.parse('${widget.apiBaseUrl}/api/factions'),
         );
@@ -123,7 +133,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             _subchannelsList = list;
           });
 
-          // CORREÇÃO: Garante que as mensagens do setor sejam buscadas imediatamente ao carregar o canal
           _fetchMessages(2, _currentSectorUid);
         }
       } else if (channelUpper == 'CORPORAÇÃO') {
@@ -137,7 +146,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             _messagesList = [];
           });
         } else {
-          // Busca membros da corporação se houver
           final response = await http.get(
             Uri.parse('${widget.apiBaseUrl}/api/corporations/members'),
           );
@@ -191,6 +199,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         setState(() {
           _messagesList = data is List ? data : [];
         });
+        _scrollToBottom();
       } else {
         setState(() {
           _messagesList = [];
@@ -214,7 +223,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     final channelUpper = _selectedChannel.toUpperCase();
 
-    // Coalizão é estritamente leitura
     if (channelUpper == 'COALIZÃO') return;
 
     int channelUid = 1;
@@ -285,6 +293,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   @override
   void dispose() {
     _messageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -331,7 +340,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           _buildLocationBar(),
           const SizedBox(height: 8),
 
-          // Abas superiores
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
@@ -825,6 +833,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                       ),
                     )
                     : ListView.builder(
+                      controller: _scrollController,
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
                         final msg = messages[index];
