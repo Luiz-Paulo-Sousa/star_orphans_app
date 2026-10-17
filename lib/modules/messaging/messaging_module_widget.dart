@@ -215,28 +215,40 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || _selectedSubchannelUid == null) return;
+    if (text.isEmpty) return;
+
+    final channelUpper = _selectedChannel.toUpperCase();
+
+    // Coalizão é estritamente leitura
+    if (channelUpper == 'COALIZÃO') return;
+
+    // Se for Setor, o subcanal é o ID do setor atual. Se for Corporação, exige ID selecionado.
+    int channelUid = 1;
+    int targetSubchannel = 1;
+
+    if (channelUpper == 'SETOR') {
+      channelUid = 2;
+      targetSubchannel =
+          _currentSectorUid; // Usa o ID do setor (ex: Agartha = 2)
+    } else if (channelUpper == 'CORPORAÇÃO') {
+      if (_selectedSubchannelUid == null) return;
+      channelUid = 3;
+      targetSubchannel = _selectedSubchannelUid!;
+    } else {
+      if (_selectedSubchannelUid == null) return;
+      targetSubchannel = _selectedSubchannelUid!;
+    }
 
     final opData = widget.profileData?['operator'] ?? {};
     final senderId = opData['account_id'] ?? opData['uid'] ?? 536870915;
 
-    int channelUid = 1;
-    final channelUpper = _selectedChannel.toUpperCase();
-    if (channelUpper == 'COALIZÃO') {
-      return; // Coalizão é estritamente leitura
-    } else if (channelUpper == 'SETOR') {
-      channelUid = 2;
-    } else if (channelUpper == 'CORPORAÇÃO') {
-      channelUid = 3;
-    }
-
     try {
       final response = await http.post(
-        Uri.parse('${widget.apiBaseUrl}/api/messages/send'),
+        Uri.parse('${widget.apiBaseUrl}/api/messages/broadcast'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'channel_id': channelUid,
-          'subchannel_id': _selectedSubchannelUid,
+          'subchannel_id': targetSubchannel,
           'sender_id': senderId,
           'content': text,
           'sector_coordinates': opData['location'] ?? 'SETOR-01',
@@ -245,10 +257,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
       if (response.statusCode == 201) {
         _messageController.clear();
-        _fetchMessages(channelUid, _selectedSubchannelUid!);
+        // Atualiza a lista de mensagens imediatamente após o envio
+        _fetchMessages(channelUid, targetSubchannel);
+      } else {
+        print('Erro ao enviar: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      print('Erro ao enviar mensagem: $e');
+      print('Exceção ao enviar mensagem: $e');
     }
   }
 
@@ -266,7 +281,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             _selectedSubchannelUid,
         orElse: () => _subchannelsList[0],
       );
-      // Lê priorizando 'pilot' (coluna real da tabela pilots)
       return (sub['pilot'] ??
               sub['name'] ??
               sub['pilot_name'] ??
@@ -510,6 +524,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       titleLabel = 'COALIZÕES:';
     }
 
+    final bool isSectorChannel = channelUpper == 'SETOR';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -549,7 +565,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                               item['pilot_uid'] ??
                               item['uid'] ??
                               item['member_uid'];
-                          // CORREÇÃO CRÍTICA: Prioriza item['pilot'] para ler o nome Buster da MariaDB
+
                           final itemName =
                               (item['pilot'] ??
                                       item['name'] ??
@@ -558,7 +574,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                       'DESCONHECIDO')
                                   .toString()
                                   .toUpperCase();
+
                           final isSelected = itemId == _selectedSubchannelUid;
+
+                          // No canal de setor, removemos o destaque verde individual para evitar confusão de DM
+                          final bool highlightSelected =
+                              isSectorChannel ? false : isSelected;
 
                           int channelId = 1;
                           if (channelUpper == 'SETOR') channelId = 2;
@@ -582,7 +603,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                     height: 6,
                                     decoration: BoxDecoration(
                                       color:
-                                          isSelected
+                                          highlightSelected
                                               ? _greenAccent
                                               : Colors.transparent,
                                       shape: BoxShape.circle,
@@ -594,12 +615,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                       itemName,
                                       style: GoogleFonts.shareTechMono(
                                         color:
-                                            isSelected
+                                            highlightSelected
                                                 ? _greenAccent
                                                 : Colors.white,
                                         fontSize: 11,
                                         fontWeight:
-                                            isSelected
+                                            highlightSelected
                                                 ? FontWeight.bold
                                                 : FontWeight.normal,
                                       ),
