@@ -122,8 +122,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           setState(() {
             _subchannelsList = list;
             if (list.isNotEmpty) {
-              // Lê corretamente 'pilot_uid' que vem do banco
-              _selectedSubchannelUid = list[0]['pilot_uid'];
+              _selectedSubchannelUid =
+                  list[0]['pilot_uid'] ??
+                  list[0]['uid'] ??
+                  list[0]['account_id'];
               _fetchMessages(2, _selectedSubchannelUid!);
             }
           });
@@ -153,13 +155,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       }
     } catch (e) {
       print('Erro ao carregar sub-canais para $_selectedChannel: $e');
-      // Fallback para o Setor caso ocorra erro de rede na rota específica
       if (channelUpper == 'SETOR') {
         setState(() {
           _subchannelsList = [
             {
               'pilot_uid': 536870917,
-              'pilot_name': 'BUSTER',
+              'pilot': 'BUSTER',
               'sector': _currentSectorUid,
             },
           ];
@@ -252,8 +253,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   }
 
   String _getSelectedSubchannelName() {
-    if (_subchannelsList.isEmpty || _selectedSubchannelUid == null)
+    if (_subchannelsList.isEmpty || _selectedSubchannelUid == null) {
       return 'CENTRAL';
+    }
     try {
       final sub = _subchannelsList.firstWhere(
         (s) =>
@@ -264,7 +266,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             _selectedSubchannelUid,
         orElse: () => _subchannelsList[0],
       );
-      // 'pilot' é a coluna correta da sua tabela pilots no MariaDB!
+      // Lê priorizando 'pilot' (coluna real da tabela pilots)
       return (sub['pilot'] ??
               sub['name'] ??
               sub['pilot_name'] ??
@@ -547,8 +549,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                               item['pilot_uid'] ??
                               item['uid'] ??
                               item['member_uid'];
+                          // CORREÇÃO CRÍTICA: Prioriza item['pilot'] para ler o nome Buster da MariaDB
                           final itemName =
-                              (item['name'] ??
+                              (item['pilot'] ??
+                                      item['name'] ??
                                       item['pilot_name'] ??
                                       item['username'] ??
                                       'DESCONHECIDO')
