@@ -1,0 +1,21 @@
+### Teste de Transmissão para a Corporação
+POST http://26.239.180.177:8020/api/messages/broadcast
+Content-Type: application/json
+
+{
+  "channel_type": "corporation",
+  "sender_id": "536870915",
+  "content": "Mensagem de teste para a Corporacao Atlas via VS Code!"
+}
+
+###
+
+### Teste de Transmissão para o Setor
+POST http://26.239.180.177:8020/api/messages/broadcast
+Content-Type: application/json
+
+{
+  "channel_type": "sector",
+  "sender_id": "536870915",
+  "content": "Mensagem de teste para o Setor via VS Code!"
+}

@@ -27,14 +27,16 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   // Controle de abas principais
   String _activeTab = 'CONVERSAS';
 
-  // Seleções ativas
+  // Canais vindos dinamicamente do banco de dados (message_channels)
+  List<dynamic> _channelsList = [];
+  bool _isLoadingChannels = false;
   String _selectedChannel = 'COALIZÃO';
-  final String _selectedContact = 'BUSTER';
 
   // Sub-canais dinâmicos de acordo com o canal selecionado
   List<dynamic> _subchannelsList = [];
   bool _isLoadingSubchannels = false;
   int? _selectedSubchannelUid;
+  String _dynamicSubchannelsLabel = 'SUB-CANAIS:';
 
   // Estado para o setor atual
   String _currentSectorName = 'AGARTHA';
@@ -43,6 +45,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   // Estados para mensagens dinâmicas
   List<dynamic> _messagesList = [];
   bool _isLoadingMessages = false;
+  bool _isSendingMessage = false; // Trava para evitar envios duplos
 
   // Controller para o campo de envio de texto
   final TextEditingController _messageController = TextEditingController();
@@ -54,7 +57,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   void initState() {
     super.initState();
     _fetchPilotSector();
-    _fetchSubchannelsForCurrentChannel();
+    _fetchMessageChannels();
   }
 
   void _scrollToBottom() {
@@ -63,6 +66,50 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
+  }
+
+  // Busca a lista de canais cadastrados na tabela 'message_channels'
+  Future<void> _fetchMessageChannels() async {
+    setState(() {
+      _isLoadingChannels = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('${widget.apiBaseUrl}/api/message-channels'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final list = data is List ? data : [];
+
+        setState(() {
+          _channelsList = list;
+          if (list.isNotEmpty && _selectedChannel.isEmpty) {
+            _selectedChannel = list[0]['description'] ?? 'COALIZÃO';
+          }
+        });
+      }
+    } catch (e) {
+      print('Erro ao buscar canais de mensagens: $e');
+      // Fallback padrão se houver erro
+      setState(() {
+        _channelsList = [
+          {'uid': 1, 'description': 'COALIZÃO'},
+          {'uid': 2, 'description': 'SETOR'},
+          {'uid': 3, 'description': 'CORPORAÇÃO'},
+          {'uid': 4, 'description': 'EQUIPE'},
+          {'uid': 5, 'description': 'ESQUADRILHA'},
+          {'uid': 6, 'description': 'CONTATOS'},
+          {'uid': 7, 'description': 'SUPORTE'},
+        ];
+      });
+    } finally {
+      setState(() {
+        _isLoadingChannels = false;
+      });
+      _fetchSubchannelsForCurrentChannel();
+    }
   }
 
   Future<void> _fetchPilotSector() async {
@@ -93,12 +140,18 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       _isLoadingSubchannels = true;
       _subchannelsList = [];
       _selectedSubchannelUid = null;
+      _dynamicSubchannelsLabel = 'SUB-CANAIS:';
     });
 
     final channelUpper = _selectedChannel.toUpperCase();
+    final profile = widget.profileData ?? {};
+    final operatorData = profile['operator'] ?? {};
+    final pilotUid =
+        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
 
     try {
       if (channelUpper == 'COALIZÃO') {
+        _dynamicSubchannelsLabel = 'COALIZÕES:';
         final response = await http.get(
           Uri.parse('${widget.apiBaseUrl}/api/factions'),
         );
@@ -114,63 +167,63 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           });
         }
       } else if (channelUpper == 'SETOR') {
-        final profile = widget.profileData ?? {};
-        final operatorData = profile['operator'] ?? {};
-        final pilotUid =
-            operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
-
         final response = await http.get(
           Uri.parse(
-            '${widget.apiBaseUrl}/api/channels/sector-pilots/$pilotUid',
+            '${widget.apiBaseUrl}/api/channels/members/sector/$pilotUid',
           ),
         );
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          final list = data is List ? data : (data['pilots'] ?? []);
+          final list = data['pilots'] ?? [];
 
           setState(() {
+            _dynamicSubchannelsLabel = data['channel_label'] ?? 'SETOR:';
             _subchannelsList = list;
+            if (list.isNotEmpty) {
+              _selectedSubchannelUid = list[0]['pilot_uid'];
+            }
           });
 
-          _fetchMessages(2, _currentSectorUid);
+          int sectorSubchannelId = data['channel_uid'] ?? _currentSectorUid;
+          _fetchMessages(2, sectorSubchannelId);
         }
       } else if (channelUpper == 'CORPORAÇÃO') {
-        final op = widget.profileData?['operator'] ?? {};
-        final corp =
-            (op['corporation'] ?? 'Freelancer').toString().toUpperCase();
+        final response = await http.get(
+          Uri.parse(
+            '${widget.apiBaseUrl}/api/channels/members/corporation/$pilotUid',
+          ),
+        );
 
-        if (corp == 'FREELANCER') {
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final list = data['pilots'] ?? [];
+
           setState(() {
-            _subchannelsList = [];
-            _messagesList = [];
+            _dynamicSubchannelsLabel = data['channel_label'] ?? 'CORPORAÇÃO:';
+            _subchannelsList = list;
+            if (list.isNotEmpty) {
+              _selectedSubchannelUid = list[0]['pilot_uid'];
+            }
           });
-        } else {
-          final response = await http.get(
-            Uri.parse('${widget.apiBaseUrl}/api/corporations/members'),
-          );
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
-            setState(() {
-              _subchannelsList = data is List ? data : [];
-            });
+
+          int corpSubchannelId = data['channel_uid'] ?? 1;
+          if (_selectedSubchannelUid != null) {
+            _fetchMessages(3, _selectedSubchannelUid!);
+          } else {
+            _fetchMessages(3, corpSubchannelId);
           }
         }
+      } else {
+        // Para os demais canais (EQUIPE, ESQUADRILHA, CONTATOS, SUPORTE)
+        setState(() {
+          _dynamicSubchannelsLabel = '$channelUpper:';
+          _subchannelsList = [];
+          _messagesList = [];
+        });
       }
     } catch (e) {
       print('Erro ao carregar sub-canais para $_selectedChannel: $e');
-      if (channelUpper == 'SETOR') {
-        setState(() {
-          _subchannelsList = [
-            {
-              'pilot_uid': 536870917,
-              'pilot': 'BUSTER',
-              'sector': _currentSectorUid,
-            },
-          ];
-        });
-        _fetchMessages(2, _currentSectorUid);
-      }
     } finally {
       setState(() {
         _isLoadingSubchannels = false;
@@ -219,25 +272,27 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSendingMessage) return;
 
     final channelUpper = _selectedChannel.toUpperCase();
-
     if (channelUpper == 'COALIZÃO') return;
 
-    int channelUid = 1;
-    int targetSubchannel = 1;
+    setState(() {
+      _isSendingMessage = true;
+    });
+
+    int channelUid = 2;
+    String channelType = 'sector';
+    int targetSubchannel = _currentSectorUid;
 
     if (channelUpper == 'SETOR') {
       channelUid = 2;
+      channelType = 'sector';
       targetSubchannel = _currentSectorUid;
     } else if (channelUpper == 'CORPORAÇÃO') {
-      if (_selectedSubchannelUid == null) return;
       channelUid = 3;
-      targetSubchannel = _selectedSubchannelUid!;
-    } else {
-      if (_selectedSubchannelUid == null) return;
-      targetSubchannel = _selectedSubchannelUid!;
+      channelType = 'corporation';
+      targetSubchannel = _selectedSubchannelUid ?? 1;
     }
 
     final opData = widget.profileData?['operator'] ?? {};
@@ -248,11 +303,11 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         Uri.parse('${widget.apiBaseUrl}/api/messages/broadcast'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'channel_type': channelType,
           'channel_id': channelUid,
           'subchannel_id': targetSubchannel,
           'sender_id': senderId,
           'content': text,
-          'sector_coordinates': opData['location'] ?? 'SETOR-01',
         }),
       );
 
@@ -262,6 +317,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       }
     } catch (e) {
       print('Exceção ao enviar mensagem: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingMessage = false;
+        });
+      }
     }
   }
 
@@ -430,13 +491,21 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           ),
           const SizedBox(height: 6),
           Expanded(
-            child: ListView(
-              children: [
-                _buildChannelItem('COALIZÃO'),
-                _buildChannelItem('SETOR'),
-                _buildChannelItem('CORPORAÇÃO'),
-              ],
-            ),
+            child:
+                _isLoadingChannels
+                    ? const Center(
+                      child: CircularProgressIndicator(
+                        color: _greenAccent,
+                        strokeWidth: 2,
+                      ),
+                    )
+                    : ListView(
+                      children:
+                          _channelsList.map((ch) {
+                            final name = (ch['description'] ?? '').toString();
+                            return _buildChannelItem(name);
+                          }).toList(),
+                    ),
           ),
         ],
       ),
@@ -512,23 +581,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Widget _buildSubchannelsPanelContent() {
     final channelUpper = _selectedChannel.toUpperCase();
-    String titleLabel = 'SUB-CANAIS:';
-
-    if (channelUpper == 'SETOR') {
-      titleLabel = _currentSectorName.toUpperCase();
-    } else if (channelUpper == 'CORPORAÇÃO') {
-      titleLabel = 'CORPORAÇÃO:';
-    } else {
-      titleLabel = 'COALIZÕES:';
-    }
-
     final bool isSectorChannel = channelUpper == 'SETOR';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          titleLabel,
+          _dynamicSubchannelsLabel.toUpperCase(),
           style: GoogleFonts.shareTechMono(
             color: Colors.white,
             fontSize: 11,
@@ -804,9 +863,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _activeTab == 'CONVERSAS'
-                ? '$_selectedChannel:'
-                : '$_selectedContact:',
+            _activeTab == 'CONVERSAS' ? '$_selectedChannel:' : 'CONTATO:',
             style: GoogleFonts.shareTechMono(
               color: Colors.white,
               fontSize: 13,
@@ -911,10 +968,22 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.send, color: _cyanColor),
-            onPressed: _sendMessage,
-          ),
+          _isSendingMessage
+              ? const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: _cyanColor,
+                    strokeWidth: 2,
+                  ),
+                ),
+              )
+              : IconButton(
+                icon: const Icon(Icons.send, color: _cyanColor),
+                onPressed: _sendMessage,
+              ),
         ],
       ),
     );
