@@ -24,6 +24,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   static const Color _greenAccent = Color(0xFF00FF66);
   static const Color _panelBg = Color(0xD912161F);
 
+  // Largura definida para alinhar o painel de contatos e abas no modo mobile
+  static const double _leftPanelWidth = 200.0;
+
   // Controle de abas principais
   String _activeTab = 'CONVERSAS';
 
@@ -41,7 +44,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   String _dynamicSubchannelsLabel = 'SUB-CANAIS:';
 
   // Estado para o setor atual
-  String _currentSectorName = 'AGARTHA';
   int _currentSectorUid = 2;
 
   // Estados para mensagens dinâmicas
@@ -153,7 +155,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _currentSectorName = data['sectorName'] ?? 'AGARTHA';
           _currentSectorUid = data['sectorUid'] ?? 2;
         });
       }
@@ -359,7 +360,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final channelUpper = _selectedChannel.toUpperCase();
     if (channelUpper == 'COALIZÃO') return;
 
-    // Se for canal broadcast sem membros, impede envio
     if (_subchannelsList.isEmpty && !_isBroadcastChannel(channelUpper)) {
       return;
     }
@@ -514,11 +514,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
-              width: 140,
+              width:
+                  _leftPanelWidth, // Largura idêntica à soma das abas no mobile
               child: Row(
                 children: [
                   Expanded(child: _buildTopTab('CONVERSAS')),
-                  const SizedBox(width: 2),
+                  const SizedBox(width: 4),
                   Expanded(child: _buildTopTab('MENSAGENS')),
                 ],
               ),
@@ -548,8 +549,19 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
                 if (isMobile) {
                   return Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start, // Alinha à esquerda no topo
                     children: [
-                      SizedBox(height: 100, child: leftPanelsWidget),
+                      SizedBox(
+                        // Na aba CONVERSAS ocupa a largura total (double.infinity)
+                        // Na aba MENSAGENS trava no tamanho exato das abas (_leftPanelWidth)
+                        width:
+                            _activeTab == 'CONVERSAS'
+                                ? double.infinity
+                                : _leftPanelWidth,
+                        height: 120,
+                        child: leftPanelsWidget,
+                      ),
                       const SizedBox(height: 8),
                       Expanded(child: chatWidget),
                     ],
@@ -558,7 +570,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(width: 260, child: leftPanelsWidget),
+                      SizedBox(width: _leftPanelWidth, child: leftPanelsWidget),
                       const SizedBox(width: 12),
                       Expanded(child: chatWidget),
                     ],
@@ -650,6 +662,55 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
+  Widget _buildDirectMessagesLeftPanel() {
+    final contatos = [
+      {'name': 'BUSTER', 'online': true},
+      {'name': 'DOOM', 'online': false},
+    ];
+    return Container(
+      width: _leftPanelWidth,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _greenAccent, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'CONTATOS:',
+            style: GoogleFonts.shareTechMono(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: ListView(
+              children:
+                  contatos
+                      .map(
+                        (c) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3.0),
+                          child: Text(
+                            c['name'] as String,
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildChannelItem(String channelName) {
     final isSelected =
         _selectedChannel.toUpperCase() == channelName.toUpperCase();
@@ -673,12 +734,15 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               ),
             ),
             const SizedBox(width: 6),
-            Text(
-              channelName,
-              style: GoogleFonts.shareTechMono(
-                color: isSelected ? _greenAccent : Colors.white,
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            Expanded(
+              child: Text(
+                channelName,
+                style: GoogleFonts.shareTechMono(
+                  color: isSelected ? _greenAccent : Colors.white,
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -700,6 +764,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 6),
         Expanded(
@@ -739,14 +804,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                   .toString()
                                   .toUpperCase();
 
-                          // Nos canais broadcast, NENHUM membro fica selecionado/destacado com bolinha verde
                           final isSelected = itemId == _selectedSubchannelUid;
                           final bool highlightSelected =
                               isBroadcast ? false : isSelected;
 
                           return InkWell(
                             onTap: () {
-                              // Nos canais P2P / Diretos (Contatos, Suporte, Coalizão) o clique troca o destinatário
                               if (!isBroadcast) {
                                 setState(() {
                                   _selectedSubchannelUid = itemId;
@@ -794,6 +857,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                                 ? FontWeight.bold
                                                 : FontWeight.normal,
                                       ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -906,7 +970,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     return InkWell(
       onTap: () => setState(() => _activeTab = title),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? _greenAccent : _cyanColor,
@@ -919,48 +983,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           title,
           style: GoogleFonts.shareTechMono(
             color: Colors.black,
-            fontSize: 8,
+            fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildDirectMessagesLeftPanel() {
-    final contatos = [
-      {'name': 'BUSTER', 'online': true},
-      {'name': 'DOOM', 'online': false},
-    ];
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        border: Border.all(color: _greenAccent, width: 1.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'CONTATOS:',
-            style: GoogleFonts.shareTechMono(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          ...contatos.map(
-            (c) => Text(
-              c['name'] as String,
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 11,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
