@@ -51,7 +51,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   bool _isLoadingMessages = false;
   bool _isSendingMessage = false;
 
-  // Controller para o campo de envio de texto
+  // Controller para o campo de envio de texto multilinha
   final TextEditingController _messageController = TextEditingController();
 
   // Controller de scroll para manter o chat nas mensagens mais recentes
@@ -514,8 +514,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
-              width:
-                  _leftPanelWidth, // Largura idêntica à soma das abas no mobile
+              width: _leftPanelWidth,
               child: Row(
                 children: [
                   Expanded(child: _buildTopTab('CONVERSAS')),
@@ -531,7 +530,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               builder: (context, constraints) {
                 final bool isMobile = constraints.maxWidth < 600;
 
-                Widget chatWidget =
+                Widget mainChatContent =
                     isReadonlyChannel
                         ? (_isLoadingMessages
                             ? const Center(
@@ -543,27 +542,24 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                               channelName: readonlyTitle,
                               messages: formattedMessages,
                             ))
-                        : _buildInteractiveChatArea(formattedMessages);
+                        : _buildSplitChatArea(formattedMessages, canShowInput);
 
                 Widget leftPanelsWidget = _buildLeftPanelsContainer(isMobile);
 
                 if (isMobile) {
                   return Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start, // Alinha à esquerda no topo
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SizedBox(
-                        // Na aba CONVERSAS ocupa a largura total (double.infinity)
-                        // Na aba MENSAGENS trava no tamanho exato das abas (_leftPanelWidth)
                         width:
-                            _activeTab == 'CONVERSAS'
-                                ? double.infinity
-                                : _leftPanelWidth,
+                            _activeTab != 'CONVERSAS'
+                                ? _leftPanelWidth
+                                : double.infinity,
                         height: 120,
                         child: leftPanelsWidget,
                       ),
                       const SizedBox(height: 8),
-                      Expanded(child: chatWidget),
+                      Expanded(child: mainChatContent),
                     ],
                   );
                 } else {
@@ -572,15 +568,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                     children: [
                       SizedBox(width: _leftPanelWidth, child: leftPanelsWidget),
                       const SizedBox(width: 12),
-                      Expanded(child: chatWidget),
+                      Expanded(child: mainChatContent),
                     ],
                   );
                 }
               },
             ),
           ),
-          const SizedBox(height: 8),
-          if (!isReadonlyChannel && canShowInput) _buildMessageInputField(),
         ],
       ),
     );
@@ -991,157 +985,221 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  Widget _buildInteractiveChatArea(List<Map<String, dynamic>> messages) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        border: Border.all(color: _cyanColor, width: 1.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _activeTab == 'CONVERSAS' ? '$_selectedChannel:' : 'CONTATO:',
-            style: GoogleFonts.shareTechMono(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
+  // Divisão em 50% Janela de Leitura e 50% Janela de Digitação de Mensagem
+  Widget _buildSplitChatArea(
+    List<Map<String, dynamic>> messages,
+    bool canShowInput,
+  ) {
+    return Column(
+      children: [
+        // 1. Janela de Leitura de Mensagens (Ocupa 50% da área disponível)
+        Expanded(
+          flex: 1,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _panelBg,
+              border: Border.all(color: _cyanColor, width: 1.2),
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child:
-                _isLoadingMessages
-                    ? const Center(
-                      child: CircularProgressIndicator(color: _cyanColor),
-                    )
-                    : messages.isEmpty
-                    ? Center(
-                      child: Text(
-                        _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
-                            ? 'NENHUM MEMBRO NA CORPORAÇÃO'
-                            : 'NENHUMA TRANSMISSÃO REGISTRADA',
-                        style: GoogleFonts.shareTechMono(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
-                      ),
-                    )
-                    : ListView.builder(
-                      controller: _scrollController,
-                      itemCount: messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = messages[index];
-                        final isMe = msg['isMe'] == true;
-                        return Align(
-                          alignment:
-                              isMe
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            padding: const EdgeInsets.all(8),
-                            constraints: const BoxConstraints(maxWidth: 280),
-                            decoration: BoxDecoration(
-                              color:
-                                  isMe
-                                      ? _cyanColor.withValues(alpha: 0.2)
-                                      : Colors.grey.shade900,
-                              border: Border.all(
-                                color: isMe ? _cyanColor : Colors.white24,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _activeTab == 'CONVERSAS' ? '$_selectedChannel:' : 'CONTATO:',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child:
+                      _isLoadingMessages
+                          ? const Center(
+                            child: CircularProgressIndicator(color: _cyanColor),
+                          )
+                          : messages.isEmpty
+                          ? Center(
+                            child: Text(
+                              _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
+                                  ? 'NENHUM MEMBRO NA CORPORAÇÃO'
+                                  : 'NENHUMA TRANSMISSÃO REGISTRADA',
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.white54,
+                                fontSize: 12,
                               ),
-                              borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      msg['sender'],
-                                      style: GoogleFonts.shareTechMono(
-                                        color: isMe ? _cyanColor : _greenAccent,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                          )
+                          : ListView.builder(
+                            controller: _scrollController,
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = messages[index];
+                              final isMe = msg['isMe'] == true;
+                              return Align(
+                                alignment:
+                                    isMe
+                                        ? Alignment.centerRight
+                                        : Alignment.centerLeft,
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 280,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isMe
+                                            ? _cyanColor.withValues(alpha: 0.2)
+                                            : Colors.grey.shade900,
+                                    border: Border.all(
+                                      color: isMe ? _cyanColor : Colors.white24,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      msg['timestamp'],
-                                      style: GoogleFonts.shareTechMono(
-                                        color: Colors.white54,
-                                        fontSize: 9,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            msg['sender'],
+                                            style: GoogleFonts.shareTechMono(
+                                              color:
+                                                  isMe
+                                                      ? _cyanColor
+                                                      : _greenAccent,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            msg['timestamp'],
+                                            style: GoogleFonts.shareTechMono(
+                                              color: Colors.white54,
+                                              fontSize: 9,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  msg['text'],
-                                  style: GoogleFonts.shareTechMono(
-                                    color: Colors.white,
-                                    fontSize: 12,
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        msg['text'],
+                                        style: GoogleFonts.shareTechMono(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMessageInputField() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        border: Border.all(color: _cyanColor, width: 1.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 12,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Transmitir mensagem para o canal...',
-                hintStyle: GoogleFonts.shareTechMono(
-                  color: Colors.white38,
-                  fontSize: 12,
                 ),
-                border: InputBorder.none,
-              ),
-              onSubmitted: (_) => _sendMessage(),
+              ],
             ),
           ),
-          IconButton(
-            icon:
-                _isSendingMessage
-                    ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: _cyanColor,
-                        strokeWidth: 2,
+        ),
+
+        const SizedBox(height: 8),
+
+        // 2. Janela de Composição e Envio de Mensagens (Ocupa os outros 50% da área disponível)
+        if (canShowInput)
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _panelBg,
+                border: Border.all(color: _cyanColor, width: 1.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'TEXTO:',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      maxLines: null,
+                      expands: true,
+                      keyboardType: TextInputType.multiline,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 12,
                       ),
-                    )
-                    : const Icon(Icons.send, color: _cyanColor, size: 20),
-            onPressed: _sendMessage,
+                      decoration: InputDecoration(
+                        hintText: 'Digite sua mensagem...',
+                        hintStyle: GoogleFonts.shareTechMono(
+                          color: Colors.white38,
+                          fontSize: 12,
+                        ),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child:
+                        _isSendingMessage
+                            ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: _cyanColor,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : ElevatedButton.icon(
+                              onPressed: _sendMessage,
+                              icon: const Icon(
+                                Icons.send,
+                                size: 16,
+                                color: Colors.black,
+                              ),
+                              label: Text(
+                                'Enviar',
+                                style: GoogleFonts.shareTechMono(
+                                  color: Colors.black,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey.shade300,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
