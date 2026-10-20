@@ -36,6 +36,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   List<dynamic> _subchannelsList = [];
   bool _isLoadingSubchannels = false;
   int? _selectedSubchannelUid;
+  int?
+  _groupChannelUid; // ID do Grupo/Entidade (Setor, Corp, Equipe, Esquadrilha)
   String _dynamicSubchannelsLabel = 'SUB-CANAIS:';
 
   // Estado para o setor atual
@@ -60,12 +62,41 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     _fetchMessageChannels();
   }
 
+  // Método auxiliar centralizado para extrair o UID dinâmico do operador logado
+  int _getPilotUid() {
+    final profile = widget.profileData ?? {};
+    final operatorData = profile['operator'] ?? {};
+
+    final dynamic rawUid =
+        operatorData['operator_uid'] ??
+        operatorData['pilot_uid'] ??
+        operatorData['account_id'] ??
+        operatorData['uid'] ??
+        profile['account_id'] ??
+        profile['uid'];
+
+    if (rawUid != null) {
+      if (rawUid is int) return rawUid;
+      return int.tryParse(rawUid.toString()) ?? 0;
+    }
+    return 0;
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
+  }
+
+  // Verifica se o canal atual é do tipo Broadcast (grupo fechado/canal coletivo)
+  bool _isBroadcastChannel(String channelName) {
+    final upper = channelName.toUpperCase();
+    return upper == 'SETOR' ||
+        upper == 'CORPORAÇÃO' ||
+        upper == 'EQUIPE' ||
+        upper == 'ESQUADRILHA';
   }
 
   // Busca a lista de canais cadastrados na tabela 'message_channels'
@@ -112,10 +143,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   }
 
   Future<void> _fetchPilotSector() async {
-    final profile = widget.profileData ?? {};
-    final operatorData = profile['operator'] ?? {};
-    final pilotUid =
-        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
+    final pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
 
     try {
       final response = await http.get(
@@ -139,14 +168,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       _isLoadingSubchannels = true;
       _subchannelsList = [];
       _selectedSubchannelUid = null;
+      _groupChannelUid = null;
       _dynamicSubchannelsLabel = 'SUB-CANAIS:';
+      _messagesList = [];
     });
 
     final channelUpper = _selectedChannel.toUpperCase();
-    final profile = widget.profileData ?? {};
-    final operatorData = profile['operator'] ?? {};
-    final pilotUid =
-        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
+    final pilotUid = _getPilotUid();
 
     try {
       if (channelUpper == 'COALIZÃO') {
@@ -174,15 +202,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final list = data['pilots'] ?? [];
+          final int sectorUid = data['channel_uid'] ?? _currentSectorUid;
           setState(() {
-            _dynamicSubchannelsLabel = data['channel_label'] ?? 'SETOR:';
+            _dynamicSubchannelsLabel =
+                data['channel_label'] ?? 'SETOR: AGARTHA';
             _subchannelsList = list;
-            if (list.isNotEmpty) {
-              _selectedSubchannelUid = list[0]['pilot_uid'];
-            }
+            _groupChannelUid = sectorUid;
           });
-          int sectorSubchannelId = data['channel_uid'] ?? _currentSectorUid;
-          _fetchMessages(2, sectorSubchannelId);
+          _fetchMessages(2, sectorUid);
         }
       } else if (channelUpper == 'CORPORAÇÃO') {
         final response = await http.get(
@@ -193,19 +220,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final list = data['pilots'] ?? [];
+          final int corpUid = data['channel_uid'] ?? 1;
           setState(() {
             _dynamicSubchannelsLabel = data['channel_label'] ?? 'CORPORAÇÃO:';
             _subchannelsList = list;
-            if (list.isNotEmpty) {
-              _selectedSubchannelUid = list[0]['pilot_uid'];
-            }
+            _groupChannelUid = corpUid;
           });
-          int corpSubchannelId = data['channel_uid'] ?? 1;
-          if (_selectedSubchannelUid != null) {
-            _fetchMessages(3, _selectedSubchannelUid!);
-          } else {
-            _fetchMessages(3, corpSubchannelId);
-          }
+          _fetchMessages(3, corpUid);
         }
       } else if (channelUpper == 'EQUIPE') {
         final response = await http.get(
@@ -214,16 +235,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final list = data['pilots'] ?? [];
+          final int teamUid = data['channel_uid'] ?? 1;
           setState(() {
             _dynamicSubchannelsLabel = data['channel_label'] ?? 'EQUIPE:';
             _subchannelsList = list;
-            if (list.isNotEmpty) {
-              _selectedSubchannelUid = list[0]['pilot_uid'] ?? list[0]['uid'];
-            }
+            _groupChannelUid = teamUid;
           });
-          int channelUid = data['channel_uid'] ?? 4;
-          int subUid = _selectedSubchannelUid ?? 1;
-          _fetchMessages(channelUid, subUid);
+          _fetchMessages(4, teamUid);
         }
       } else if (channelUpper == 'ESQUADRILHA') {
         final response = await http.get(
@@ -234,16 +252,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final list = data['pilots'] ?? [];
+          final int squadUid = data['channel_uid'] ?? 1;
           setState(() {
             _dynamicSubchannelsLabel = data['channel_label'] ?? 'ESQUADRILHA:';
             _subchannelsList = list;
-            if (list.isNotEmpty) {
-              _selectedSubchannelUid = list[0]['pilot_uid'] ?? list[0]['uid'];
-            }
+            _groupChannelUid = squadUid;
           });
-          int channelUid = data['channel_uid'] ?? 5;
-          int subUid = _selectedSubchannelUid ?? 1;
-          _fetchMessages(channelUid, subUid);
+          _fetchMessages(5, squadUid);
         }
       } else if (channelUpper == 'CONTATOS') {
         final response = await http.get(
@@ -261,9 +276,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               _selectedSubchannelUid = list[0]['pilot_uid'] ?? list[0]['uid'];
             }
           });
-          int channelUid = data['channel_uid'] ?? 6;
-          int subUid = _selectedSubchannelUid ?? 1;
-          _fetchMessages(channelUid, subUid);
+          if (_selectedSubchannelUid != null) {
+            _fetchMessages(6, _selectedSubchannelUid!);
+          }
         }
       } else if (channelUpper == 'SUPORTE') {
         final response = await http.get(
@@ -281,9 +296,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               _selectedSubchannelUid = list[0]['pilot_uid'] ?? list[0]['uid'];
             }
           });
-          int channelUid = data['channel_uid'] ?? 7;
-          int subUid = _selectedSubchannelUid ?? 1;
-          _fetchMessages(channelUid, subUid);
+          if (_selectedSubchannelUid != null) {
+            _fetchMessages(7, _selectedSubchannelUid!);
+          }
         }
       } else {
         setState(() {
@@ -306,10 +321,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       _isLoadingMessages = true;
     });
 
-    final profile = widget.profileData ?? {};
-    final operatorData = profile['operator'] ?? {};
-    final accountUid =
-        operatorData['account_id'] ?? operatorData['uid'] ?? 536870915;
+    final accountUid = _getPilotUid();
 
     try {
       final response = await http.get(
@@ -347,30 +359,35 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final channelUpper = _selectedChannel.toUpperCase();
     if (channelUpper == 'COALIZÃO') return;
 
+    // Se for canal broadcast sem membros, impede envio
+    if (_subchannelsList.isEmpty && !_isBroadcastChannel(channelUpper)) {
+      return;
+    }
+
     setState(() {
       _isSendingMessage = true;
     });
 
     int channelUid = 2;
     String channelType = 'sector';
-    int targetSubchannel = _currentSectorUid;
+    int targetSubchannel = _groupChannelUid ?? _currentSectorUid;
 
     if (channelUpper == 'SETOR') {
       channelUid = 2;
       channelType = 'sector';
-      targetSubchannel = _currentSectorUid;
+      targetSubchannel = _groupChannelUid ?? _currentSectorUid;
     } else if (channelUpper == 'CORPORAÇÃO') {
       channelUid = 3;
       channelType = 'corporation';
-      targetSubchannel = _selectedSubchannelUid ?? 1;
+      targetSubchannel = _groupChannelUid ?? 1;
     } else if (channelUpper == 'EQUIPE') {
       channelUid = 4;
       channelType = 'team';
-      targetSubchannel = 1;
+      targetSubchannel = _groupChannelUid ?? 1;
     } else if (channelUpper == 'ESQUADRILHA') {
       channelUid = 5;
-      channelType = 'squadron';
-      targetSubchannel = 1;
+      channelType = 'squad';
+      targetSubchannel = _groupChannelUid ?? 1;
     } else if (channelUpper == 'CONTATOS') {
       channelUid = 6;
       channelType = 'contact';
@@ -378,11 +395,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     } else if (channelUpper == 'SUPORTE') {
       channelUid = 7;
       channelType = 'support';
-      targetSubchannel = 1;
+      targetSubchannel = _selectedSubchannelUid ?? 1;
     }
 
-    final opData = widget.profileData?['operator'] ?? {};
-    final senderId = opData['account_id'] ?? opData['uid'] ?? 536870915;
+    final senderId = _getPilotUid();
 
     try {
       final response = await http.post(
@@ -437,6 +453,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
+  String _formatCredits(dynamic credits) {
+    if (credits == null) return '0';
+    final n = int.tryParse(credits.toString()) ?? 0;
+    return n.toString();
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -449,6 +471,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final bool isReadonlyChannel =
         _activeTab == 'CONVERSAS' &&
         _selectedChannel.toUpperCase() == 'COALIZÃO';
+
+    final bool isBroadcast = _isBroadcastChannel(_selectedChannel);
+    final bool canShowInput = isBroadcast || _subchannelsList.isNotEmpty;
 
     final formattedMessages =
         _messagesList.map((m) {
@@ -543,7 +568,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             ),
           ),
           const SizedBox(height: 8),
-          if (!isReadonlyChannel) _buildMessageInputField(),
+          if (!isReadonlyChannel && canShowInput) _buildMessageInputField(),
         ],
       ),
     );
@@ -663,8 +688,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   }
 
   Widget _buildSubchannelsPanelContent() {
-    final channelUpper = _selectedChannel.toUpperCase();
-    final bool isSectorChannel = channelUpper == 'SETOR';
+    final bool isBroadcast = _isBroadcastChannel(_selectedChannel);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -689,7 +713,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   )
                   : _subchannelsList.isEmpty
                   ? Text(
-                    channelUpper == 'CORPORAÇÃO'
+                    _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
                         ? 'Nenhum membro'
                         : 'Nenhum registro',
                     style: GoogleFonts.shareTechMono(
@@ -715,24 +739,28 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                   .toString()
                                   .toUpperCase();
 
+                          // Nos canais broadcast, NENHUM membro fica selecionado/destacado com bolinha verde
                           final isSelected = itemId == _selectedSubchannelUid;
                           final bool highlightSelected =
-                              isSectorChannel ? false : isSelected;
-
-                          int channelId = 1;
-                          if (channelUpper == 'SETOR') channelId = 2;
-                          if (channelUpper == 'CORPORAÇÃO') channelId = 3;
-                          if (channelUpper == 'EQUIPE') channelId = 4;
-                          if (channelUpper == 'ESQUADRILHA') channelId = 5;
-                          if (channelUpper == 'CONTATOS') channelId = 6;
-                          if (channelUpper == 'SUPORTE') channelId = 7;
+                              isBroadcast ? false : isSelected;
 
                           return InkWell(
                             onTap: () {
-                              setState(() {
-                                _selectedSubchannelUid = itemId;
-                              });
-                              _fetchMessages(channelId, itemId);
+                              // Nos canais P2P / Diretos (Contatos, Suporte, Coalizão) o clique troca o destinatário
+                              if (!isBroadcast) {
+                                setState(() {
+                                  _selectedSubchannelUid = itemId;
+                                });
+                                int channelId = 6;
+                                if (_selectedChannel.toUpperCase() ==
+                                    'SUPORTE') {
+                                  channelId = 7;
+                                } else if (_selectedChannel.toUpperCase() ==
+                                    'COALIZÃO') {
+                                  channelId = 1;
+                                }
+                                _fetchMessages(channelId, itemId);
+                              }
                             },
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -971,7 +999,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                             : 'NENHUMA TRANSMISSÃO REGISTRADA',
                         style: GoogleFonts.shareTechMono(
                           color: Colors.white54,
-                          fontSize: 11,
+                          fontSize: 12,
                         ),
                       ),
                     )
@@ -980,42 +1008,60 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
                         final msg = messages[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    '[${msg['timestamp']}] ',
-                                    style: GoogleFonts.shareTechMono(
-                                      color: Colors.white38,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${msg['sender']}:',
-                                    style: GoogleFonts.shareTechMono(
-                                      color:
-                                          msg['isMe']
-                                              ? _greenAccent
-                                              : _cyanColor,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                        final isMe = msg['isMe'] == true;
+                        return Align(
+                          alignment:
+                              isMe
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.all(8),
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            decoration: BoxDecoration(
+                              color:
+                                  isMe
+                                      ? _cyanColor.withValues(alpha: 0.2)
+                                      : Colors.grey.shade900,
+                              border: Border.all(
+                                color: isMe ? _cyanColor : Colors.white24,
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                msg['text'],
-                                style: GoogleFonts.shareTechMono(
-                                  color: Colors.white,
-                                  fontSize: 12,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      msg['sender'],
+                                      style: GoogleFonts.shareTechMono(
+                                        color: isMe ? _cyanColor : _greenAccent,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      msg['timestamp'],
+                                      style: GoogleFonts.shareTechMono(
+                                        color: Colors.white54,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  msg['text'],
+                                  style: GoogleFonts.shareTechMono(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -1028,7 +1074,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Widget _buildMessageInputField() {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: _panelBg,
         border: Border.all(color: _cyanColor, width: 1.2),
@@ -1041,47 +1087,35 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               controller: _messageController,
               style: GoogleFonts.shareTechMono(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 12,
               ),
               decoration: InputDecoration(
                 hintText: 'Transmitir mensagem para o canal...',
                 hintStyle: GoogleFonts.shareTechMono(
                   color: Colors.white38,
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
                 border: InputBorder.none,
               ),
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
-          _isSendingMessage
-              ? const Padding(
-                padding: EdgeInsets.all(8.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: _cyanColor,
-                    strokeWidth: 2,
-                  ),
-                ),
-              )
-              : IconButton(
-                icon: const Icon(Icons.send, color: _cyanColor, size: 20),
-                onPressed: _sendMessage,
-              ),
+          IconButton(
+            icon:
+                _isSendingMessage
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: _cyanColor,
+                        strokeWidth: 2,
+                      ),
+                    )
+                    : const Icon(Icons.send, color: _cyanColor, size: 20),
+            onPressed: _sendMessage,
+          ),
         ],
       ),
-    );
-  }
-
-  String _formatCredits(dynamic value) {
-    if (value == null) return '0';
-    int parsed =
-        value is num ? value.toInt() : int.tryParse(value.toString()) ?? 0;
-    return parsed.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
     );
   }
 }
