@@ -27,7 +27,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   // Largura definida para alinhar o painel de contatos e abas no modo mobile
   static const double _leftPanelWidth = 200.0;
 
-  // Controle de abas principais
+  // Controle de abas principais: 'CONVERSAS' ou 'MENSAGENS'
   String _activeTab = 'CONVERSAS';
 
   // Canais vindos dinamicamente do banco de dados (message_channels)
@@ -39,9 +39,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   List<dynamic> _subchannelsList = [];
   bool _isLoadingSubchannels = false;
   int? _selectedSubchannelUid;
-  int?
-  _groupChannelUid; // ID do Grupo/Entidade (Setor, Corp, Equipe, Esquadrilha)
+  int? _groupChannelUid;
   String _dynamicSubchannelsLabel = 'SUB-CANAIS:';
+
+  // Lista específica de Contatos para a aba MENSAGENS
+  List<dynamic> _contactsList = [];
+  int? _selectedContactUid;
 
   // Estado para o setor atual
   int _currentSectorUid = 2;
@@ -51,7 +54,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   bool _isLoadingMessages = false;
   bool _isSendingMessage = false;
 
-  // Controller para o campo de envio de texto multilinha
+  // Controller para o campo de envio de texto
   final TextEditingController _messageController = TextEditingController();
 
   // Controller de scroll para manter o chat nas mensagens mais recentes
@@ -62,9 +65,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     super.initState();
     _fetchPilotSector();
     _fetchMessageChannels();
+    _fetchContactsList();
   }
 
-  // Método auxiliar centralizado para extrair o UID dinâmico do operador logado
   int _getPilotUid() {
     final profile = widget.profileData ?? {};
     final operatorData = profile['operator'] ?? {};
@@ -92,7 +95,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     });
   }
 
-  // Verifica se o canal atual é do tipo Broadcast (grupo fechado/canal coletivo)
   bool _isBroadcastChannel(String channelName) {
     final upper = channelName.toUpperCase();
     return upper == 'SETOR' ||
@@ -101,7 +103,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         upper == 'ESQUADRILHA';
   }
 
-  // Busca a lista de canais cadastrados na tabela 'message_channels'
   Future<void> _fetchMessageChannels() async {
     setState(() {
       _isLoadingChannels = true;
@@ -144,6 +145,32 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
+  Future<void> _fetchContactsList() async {
+    final pilotUid = _getPilotUid();
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${widget.apiBaseUrl}/api/channels/members/contact/$pilotUid',
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final list = data['pilots'] ?? [];
+        setState(() {
+          _contactsList = list;
+          if (list.isNotEmpty && _selectedContactUid == null) {
+            _selectedContactUid = list[0]['pilot_uid'] ?? list[0]['uid'];
+            if (_activeTab == 'MENSAGENS') {
+              _fetchMessages(6, _selectedContactUid!);
+            }
+          }
+        });
+      }
+    } catch (e) {
+      print('Erro ao buscar contatos: $e');
+    }
+  }
+
   Future<void> _fetchPilotSector() async {
     final pilotUid = _getPilotUid();
     if (pilotUid == 0) return;
@@ -163,7 +190,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  // Consulta o banco de dados dinamicamente com base no canal selecionado
   Future<void> _fetchSubchannelsForCurrentChannel() async {
     setState(() {
       _isLoadingSubchannels = true;
@@ -324,10 +350,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     final accountUid = _getPilotUid();
 
+    // Na aba CONVERSAS buscamos mensagens do tipo 0 (chat em tempo real).
+    // Na aba MENSAGENS buscamos mensagens do tipo 1 (e-mails/mensagens longas).
+    final int messageType = _activeTab == 'CONVERSAS' ? 0 : 1;
+
     try {
       final response = await http.get(
         Uri.parse(
-          '${widget.apiBaseUrl}/api/messages/$channelUid/$subchannelUid?destinationUid=$accountUid',
+          '${widget.apiBaseUrl}/api/messages/$channelUid/$subchannelUid?destinationUid=$accountUid&type=$messageType',
         ),
       );
       if (response.statusCode == 200) {
@@ -357,45 +387,45 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSendingMessage) return;
 
-    final channelUpper = _selectedChannel.toUpperCase();
-    if (channelUpper == 'COALIZÃO') return;
-
-    if (_subchannelsList.isEmpty && !_isBroadcastChannel(channelUpper)) {
-      return;
-    }
-
     setState(() {
       _isSendingMessage = true;
     });
 
-    int channelUid = 2;
-    String channelType = 'sector';
-    int targetSubchannel = _groupChannelUid ?? _currentSectorUid;
+    int channelUid = 6;
+    String channelType = 'contact';
+    int targetSubchannel = _selectedContactUid ?? 1;
 
-    if (channelUpper == 'SETOR') {
-      channelUid = 2;
-      channelType = 'sector';
-      targetSubchannel = _groupChannelUid ?? _currentSectorUid;
-    } else if (channelUpper == 'CORPORAÇÃO') {
-      channelUid = 3;
-      channelType = 'corporation';
-      targetSubchannel = _groupChannelUid ?? 1;
-    } else if (channelUpper == 'EQUIPE') {
-      channelUid = 4;
-      channelType = 'team';
-      targetSubchannel = _groupChannelUid ?? 1;
-    } else if (channelUpper == 'ESQUADRILHA') {
-      channelUid = 5;
-      channelType = 'squad';
-      targetSubchannel = _groupChannelUid ?? 1;
-    } else if (channelUpper == 'CONTATOS') {
-      channelUid = 6;
-      channelType = 'contact';
-      targetSubchannel = _selectedSubchannelUid ?? 1;
-    } else if (channelUpper == 'SUPORTE') {
-      channelUid = 7;
-      channelType = 'support';
-      targetSubchannel = _selectedSubchannelUid ?? 1;
+    if (_activeTab == 'CONVERSAS') {
+      final channelUpper = _selectedChannel.toUpperCase();
+      if (channelUpper == 'COALIZÃO') {
+        setState(() => _isSendingMessage = false);
+        return;
+      }
+      if (channelUpper == 'SETOR') {
+        channelUid = 2;
+        channelType = 'sector';
+        targetSubchannel = _groupChannelUid ?? _currentSectorUid;
+      } else if (channelUpper == 'CORPORAÇÃO') {
+        channelUid = 3;
+        channelType = 'corporation';
+        targetSubchannel = _groupChannelUid ?? 1;
+      } else if (channelUpper == 'EQUIPE') {
+        channelUid = 4;
+        channelType = 'team';
+        targetSubchannel = _groupChannelUid ?? 1;
+      } else if (channelUpper == 'ESQUADRILHA') {
+        channelUid = 5;
+        channelType = 'squad';
+        targetSubchannel = _groupChannelUid ?? 1;
+      } else if (channelUpper == 'CONTATOS') {
+        channelUid = 6;
+        channelType = 'contact';
+        targetSubchannel = _selectedSubchannelUid ?? 1;
+      } else if (channelUpper == 'SUPORTE') {
+        channelUid = 7;
+        channelType = 'support';
+        targetSubchannel = _selectedSubchannelUid ?? 1;
+      }
     }
 
     final senderId = _getPilotUid();
@@ -466,6 +496,21 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     super.dispose();
   }
 
+  void _switchTab(String tabName) {
+    if (_activeTab == tabName) return;
+    setState(() {
+      _activeTab = tabName;
+    });
+
+    if (tabName == 'MENSAGENS') {
+      if (_selectedContactUid != null) {
+        _fetchMessages(6, _selectedContactUid!);
+      }
+    } else {
+      _fetchSubchannelsForCurrentChannel();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isReadonlyChannel =
@@ -473,7 +518,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         _selectedChannel.toUpperCase() == 'COALIZÃO';
 
     final bool isBroadcast = _isBroadcastChannel(_selectedChannel);
-    final bool canShowInput = isBroadcast || _subchannelsList.isNotEmpty;
+    final bool canShowInput =
+        _activeTab != 'CONVERSAS' || isBroadcast || _subchannelsList.isNotEmpty;
 
     final formattedMessages =
         _messagesList.map((m) {
@@ -530,6 +576,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               builder: (context, constraints) {
                 final bool isMobile = constraints.maxWidth < 600;
 
+                // Na aba MENSAGENS usamos a tela dividida 50%/50%
+                // Na aba CONVERSAS usamos a lista inteira + barra simples no rodapé
                 Widget mainChatContent =
                     isReadonlyChannel
                         ? (_isLoadingMessages
@@ -542,7 +590,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                               channelName: readonlyTitle,
                               messages: formattedMessages,
                             ))
-                        : _buildSplitChatArea(formattedMessages, canShowInput);
+                        : (_activeTab == 'MENSAGENS'
+                            ? _buildSplitChatArea(
+                              formattedMessages,
+                              canShowInput,
+                            )
+                            : _buildInteractiveChatArea(formattedMessages));
 
                 Widget leftPanelsWidget = _buildLeftPanelsContainer(isMobile);
 
@@ -575,6 +628,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               },
             ),
           ),
+          const SizedBox(height: 8),
+          // Barra de digitação simples para a aba CONVERSAS
+          if (_activeTab == 'CONVERSAS' && !isReadonlyChannel && canShowInput)
+            _buildMessageInputField(),
         ],
       ),
     );
@@ -657,10 +714,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   }
 
   Widget _buildDirectMessagesLeftPanel() {
-    final contatos = [
-      {'name': 'BUSTER', 'online': true},
-      {'name': 'DOOM', 'online': false},
-    ];
     return Container(
       width: _leftPanelWidth,
       padding: const EdgeInsets.all(8),
@@ -682,23 +735,78 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           ),
           const SizedBox(height: 6),
           Expanded(
-            child: ListView(
-              children:
-                  contatos
-                      .map(
-                        (c) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3.0),
-                          child: Text(
-                            c['name'] as String,
-                            style: GoogleFonts.shareTechMono(
-                              color: Colors.white,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-            ),
+            child:
+                _contactsList.isEmpty
+                    ? Text(
+                      'Nenhum contato',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    )
+                    : ListView(
+                      children:
+                          _contactsList.map((contact) {
+                            final contactId =
+                                contact['pilot_uid'] ?? contact['uid'];
+                            final contactName =
+                                (contact['pilot'] ??
+                                        contact['name'] ??
+                                        contact['username'] ??
+                                        'DESCONHECIDO')
+                                    .toString()
+                                    .toUpperCase();
+
+                            final isSelected = contactId == _selectedContactUid;
+
+                            return InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedContactUid = contactId;
+                                });
+                                _fetchMessages(6, contactId);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 3.0,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            isSelected
+                                                ? _greenAccent
+                                                : Colors.transparent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        contactName,
+                                        style: GoogleFonts.shareTechMono(
+                                          color:
+                                              isSelected
+                                                  ? _greenAccent
+                                                  : Colors.white,
+                                          fontSize: 11,
+                                          fontWeight:
+                                              isSelected
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    ),
           ),
         ],
       ),
@@ -962,7 +1070,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   Widget _buildTopTab(String title) {
     final isSelected = _activeTab == title;
     return InkWell(
-      onTap: () => setState(() => _activeTab = title),
+      onTap: () => _switchTab(title),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
         alignment: Alignment.center,
@@ -985,14 +1093,121 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Divisão em 50% Janela de Leitura e 50% Janela de Digitação de Mensagem
+  // Janela de Leitura que Ocupa a Altura Inteira na aba CONVERSAS
+  Widget _buildInteractiveChatArea(List<Map<String, dynamic>> messages) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _cyanColor, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$_selectedChannel:',
+            style: GoogleFonts.shareTechMono(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child:
+                _isLoadingMessages
+                    ? const Center(
+                      child: CircularProgressIndicator(color: _cyanColor),
+                    )
+                    : messages.isEmpty
+                    ? Center(
+                      child: Text(
+                        _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
+                            ? 'NENHUM MEMBRO NA CORPORAÇÃO'
+                            : 'NENHUMA TRANSMISSÃO REGISTRADA',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                    : ListView.builder(
+                      controller: _scrollController,
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = messages[index];
+                        final isMe = msg['isMe'] == true;
+                        return Align(
+                          alignment:
+                              isMe
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.all(8),
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            decoration: BoxDecoration(
+                              color:
+                                  isMe
+                                      ? _cyanColor.withValues(alpha: 0.2)
+                                      : Colors.grey.shade900,
+                              border: Border.all(
+                                color: isMe ? _cyanColor : Colors.white24,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      msg['sender'],
+                                      style: GoogleFonts.shareTechMono(
+                                        color: isMe ? _cyanColor : _greenAccent,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      msg['timestamp'],
+                                      style: GoogleFonts.shareTechMono(
+                                        color: Colors.white54,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  msg['text'],
+                                  style: GoogleFonts.shareTechMono(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Divisão em 50% Leitura e 50% Digitação na aba MENSAGENS
   Widget _buildSplitChatArea(
     List<Map<String, dynamic>> messages,
     bool canShowInput,
   ) {
     return Column(
       children: [
-        // 1. Janela de Leitura de Mensagens (Ocupa 50% da área disponível)
         Expanded(
           flex: 1,
           child: Container(
@@ -1006,7 +1221,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _activeTab == 'CONVERSAS' ? '$_selectedChannel:' : 'CONTATO:',
+                  'CONTATO:',
                   style: GoogleFonts.shareTechMono(
                     color: Colors.white,
                     fontSize: 13,
@@ -1023,9 +1238,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                           : messages.isEmpty
                           ? Center(
                             child: Text(
-                              _selectedChannel.toUpperCase() == 'CORPORAÇÃO'
-                                  ? 'NENHUM MEMBRO NA CORPORAÇÃO'
-                                  : 'NENHUMA TRANSMISSÃO REGISTRADA',
+                              'NENHUMA TRANSMISSÃO REGISTRADA',
                               style: GoogleFonts.shareTechMono(
                                 color: Colors.white54,
                                 fontSize: 12,
@@ -1111,7 +1324,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
         const SizedBox(height: 8),
 
-        // 2. Janela de Composição e Envio de Mensagens (Ocupa os outros 50% da área disponível)
         if (canShowInput)
           Expanded(
             flex: 1,
@@ -1200,6 +1412,54 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             ),
           ),
       ],
+    );
+  }
+
+  // Barra de digitação simples para a aba CONVERSAS
+  Widget _buildMessageInputField() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _cyanColor, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Transmitir mensagem para o canal...',
+                hintStyle: GoogleFonts.shareTechMono(
+                  color: Colors.white38,
+                  fontSize: 12,
+                ),
+                border: InputBorder.none,
+              ),
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          IconButton(
+            icon:
+                _isSendingMessage
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: _cyanColor,
+                        strokeWidth: 2,
+                      ),
+                    )
+                    : const Icon(Icons.send, color: _cyanColor, size: 20),
+            onPressed: _sendMessage,
+          ),
+        ],
+      ),
     );
   }
 }
