@@ -150,10 +150,20 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         final list = data['pilots'] ?? [];
         setState(() {
           _contactsList = list;
-          if (list.isNotEmpty && _selectedContactUid == null) {
-            _selectedContactUid = list[0]['pilot_uid'] ?? list[0]['uid'];
-            if (_activeTab == 'MENSAGENS') {
-              _fetchMessages(6, _selectedContactUid!);
+          final bool isCurrentSelectedValid = list.any(
+            (c) => (c['pilot_uid'] ?? c['uid']) == _selectedContactUid,
+          );
+          if (!isCurrentSelectedValid) {
+            if (list.isNotEmpty) {
+              _selectedContactUid = list[0]['pilot_uid'] ?? list[0]['uid'];
+              if (_activeTab == 'MENSAGENS') {
+                _fetchMessages(6, _selectedContactUid!);
+              }
+            } else {
+              _selectedContactUid = null;
+              if (_activeTab == 'MENSAGENS') {
+                _messagesList = [];
+              }
             }
           }
         });
@@ -894,74 +904,29 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
                             final isSelected = contactId == _selectedContactUid;
 
-                            return GestureDetector(
-                              behavior: HitTestBehavior.opaque,
+                            return _ContactListTile(
+                              key: ValueKey('contact_tile_$contactId'),
+                              contactUid: contactId,
+                              contactName: contactName,
+                              isSelected: isSelected,
                               onTap: () {
                                 setState(() {
                                   _selectedContactUid = contactId;
                                 });
                                 _fetchMessages(6, contactId);
                               },
-                              onSecondaryTapUp: (details) {
+                              onRemoveContact: () {
+                                _removeContact(contactId);
+                              },
+                              onContextMenu: (position) {
                                 _showPilotContextMenu(
                                   context,
-                                  details.globalPosition,
+                                  position,
                                   contactId,
                                   contactName,
                                   true,
                                 );
                               },
-                              onLongPressStart: (details) {
-                                _showPilotContextMenu(
-                                  context,
-                                  details.globalPosition,
-                                  contactId,
-                                  contactName,
-                                  true,
-                                );
-                              },
-                              child: Tooltip(
-                                message:
-                                    'Clique com botão direito / Toque longo para remover',
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 3.0,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 6,
-                                        height: 6,
-                                        decoration: BoxDecoration(
-                                          color:
-                                              isSelected
-                                                  ? _greenAccent
-                                                  : Colors.transparent,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          contactName,
-                                          style: GoogleFonts.shareTechMono(
-                                            color:
-                                                isSelected
-                                                    ? _greenAccent
-                                                    : Colors.white,
-                                            fontSize: 11,
-                                            fontWeight:
-                                                isSelected
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
                             );
                           }).toList(),
                     ),
@@ -1708,10 +1673,9 @@ class _PilotListTileState extends State<_PilotListTile> {
             widget.onContextMenu(details.globalPosition);
           }
         },
-        onLongPressStart: (details) {
+        onLongPress: () {
           if (widget.canAddContact) {
-            setState(() => _showMobileAction = true);
-            widget.onContextMenu(details.globalPosition);
+            setState(() => _showMobileAction = !_showMobileAction);
           }
         },
         child: Container(
@@ -1807,6 +1771,140 @@ class _PilotListTileState extends State<_PilotListTile> {
                             '+ CONTATO',
                             style: GoogleFonts.shareTechMono(
                               color: greenAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactListTile extends StatefulWidget {
+  final int contactUid;
+  final String contactName;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onRemoveContact;
+  final void Function(Offset position)? onContextMenu;
+
+  const _ContactListTile({
+    super.key,
+    required this.contactUid,
+    required this.contactName,
+    required this.isSelected,
+    required this.onTap,
+    required this.onRemoveContact,
+    this.onContextMenu,
+  });
+
+  @override
+  State<_ContactListTile> createState() => _ContactListTileState();
+}
+
+class _ContactListTileState extends State<_ContactListTile> {
+  bool _isHovered = false;
+  bool _showMobileAction = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const Color greenAccent = Color(0xFF00FF66);
+    const Color yellowAccent = Color(0xFFFFD700);
+    final bool showRemoveButton = _isHovered || _showMobileAction;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_showMobileAction) {
+            setState(() => _showMobileAction = false);
+          }
+          widget.onTap();
+        },
+        onSecondaryTapUp: (details) {
+          if (widget.onContextMenu != null) {
+            widget.onContextMenu!(details.globalPosition);
+          }
+        },
+        onLongPress: () {
+          setState(() => _showMobileAction = !_showMobileAction);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 2.0),
+          decoration: BoxDecoration(
+            color: _isHovered
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: widget.isSelected ? greenAccent : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.contactName,
+                  style: GoogleFonts.shareTechMono(
+                    color: widget.isSelected ? greenAccent : Colors.white,
+                    fontSize: 11,
+                    fontWeight: widget.isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (showRemoveButton) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: 'Remover dos Contatos',
+                  child: InkWell(
+                    onTap: () {
+                      setState(() => _showMobileAction = false);
+                      widget.onRemoveContact();
+                    },
+                    borderRadius: BorderRadius.circular(3),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: yellowAccent.withValues(alpha: 0.18),
+                        border: Border.all(color: yellowAccent, width: 0.8),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.person_remove_alt_1,
+                            color: yellowAccent,
+                            size: 10,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '- CONTATO',
+                            style: GoogleFonts.shareTechMono(
+                              color: yellowAccent,
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
                             ),
