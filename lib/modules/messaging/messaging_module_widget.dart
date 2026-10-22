@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 
 import 'views/readonly_chat_view.dart';
 
@@ -22,42 +23,33 @@ class MessagingModuleWidget extends StatefulWidget {
 class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   static const Color _cyanColor = Color(0xFF00D2FF);
   static const Color _greenAccent = Color(0xFF00FF66);
+  static const Color _yellowAccent = Color(0xFFFFD700);
   static const Color _panelBg = Color(0xD912161F);
 
-  // Largura definida para alinhar o painel de contatos e abas no modo mobile
   static const double _leftPanelWidth = 200.0;
 
-  // Controle de abas principais: 'CONVERSAS' ou 'MENSAGENS'
   String _activeTab = 'CONVERSAS';
 
-  // Canais vindos dinamicamente do banco de dados (message_channels)
   List<dynamic> _channelsList = [];
   bool _isLoadingChannels = false;
   String _selectedChannel = 'COALIZÃO';
 
-  // Sub-canais dinâmicos de acordo com o canal selecionado
   List<dynamic> _subchannelsList = [];
   bool _isLoadingSubchannels = false;
   int? _selectedSubchannelUid;
   int? _groupChannelUid;
   String _dynamicSubchannelsLabel = 'SUB-CANAIS:';
 
-  // Lista específica de Contatos para a aba MENSAGENS
   List<dynamic> _contactsList = [];
   int? _selectedContactUid;
 
-  // Estado para o setor atual
   int _currentSectorUid = 2;
 
-  // Estados para mensagens dinâmicas
   List<dynamic> _messagesList = [];
   bool _isLoadingMessages = false;
   bool _isSendingMessage = false;
 
-  // Controller para o campo de envio de texto
   final TextEditingController _messageController = TextEditingController();
-
-  // Controller de scroll para manter o chat nas mensagens mais recentes
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -168,6 +160,155 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       }
     } catch (e) {
       print('Erro ao buscar contatos: $e');
+    }
+  }
+
+  Future<void> _addContact(int contactUid) async {
+    final pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
+
+    try {
+      final response = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contacts/add'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pilot_uid': pilotUid,
+          'contact_uid': contactUid,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        await _fetchContactsList();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Contato adicionado com sucesso!')),
+          );
+        }
+      } else {
+        final err = jsonDecode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(err['error'] ?? 'Erro ao adicionar contato.')),
+          );
+        }
+      }
+    } catch (e) {
+      print('Erro ao adicionar contato: $e');
+    }
+  }
+
+  Future<void> _removeContact(int contactUid) async {
+    final pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse('${widget.apiBaseUrl}/api/contacts/remove/$pilotUid/$contactUid'),
+      );
+
+      if (response.statusCode == 200) {
+        await _fetchContactsList();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Contato removido com sucesso!')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Erro ao remover contato.')),
+          );
+        }
+      }
+    } catch (e) {
+      print('Erro ao remover contato: $e');
+    }
+  }
+
+  void _showPilotContextMenu(
+    BuildContext context,
+    Offset position,
+    int pilotUid,
+    String pilotName,
+    bool isContactList,
+  ) async {
+    if (!isContactList && pilotUid == _getPilotUid()) return;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+
+    final List<PopupMenuEntry<String>> menuItems = [];
+
+    if (isContactList) {
+      menuItems.add(
+        PopupMenuItem<String>(
+          value: 'remove',
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.person_remove, color: _yellowAccent, size: 16),
+              const SizedBox(width: 8),
+              Text(
+                'Remover dos Contatos',
+                style: GoogleFonts.shareTechMono(
+                  color: _yellowAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      final bool isAlreadyContact =
+          _contactsList.any((c) => (c['pilot_uid'] ?? c['uid']) == pilotUid);
+      if (!isAlreadyContact) {
+        menuItems.add(
+          PopupMenuItem<String>(
+            value: 'add',
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.person_add, color: _greenAccent, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Adicionar aos Contatos',
+                  style: GoogleFonts.shareTechMono(
+                    color: _greenAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    if (menuItems.isEmpty) return;
+
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(20, 20),
+        Offset.zero & overlay.size,
+      ),
+      color: const Color(0xFF12161F),
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: _cyanColor, width: 1.0),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      items: menuItems,
+    );
+
+    if (result == 'add') {
+      _addContact(pilotUid);
+    } else if (result == 'remove') {
+      _removeContact(pilotUid);
     }
   }
 
@@ -349,9 +490,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     });
 
     final accountUid = _getPilotUid();
-
-    // Na aba CONVERSAS buscamos mensagens do tipo 0 (chat em tempo real).
-    // Na aba MENSAGENS buscamos mensagens do tipo 1 (e-mails/mensagens longas).
     final int messageType = _activeTab == 'CONVERSAS' ? 0 : 1;
 
     try {
@@ -576,8 +714,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               builder: (context, constraints) {
                 final bool isMobile = constraints.maxWidth < 600;
 
-                // Na aba MENSAGENS usamos a tela dividida 50%/50%
-                // Na aba CONVERSAS usamos a lista inteira + barra simples no rodapé
                 Widget mainChatContent =
                     isReadonlyChannel
                         ? (_isLoadingMessages
@@ -629,7 +765,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             ),
           ),
           const SizedBox(height: 8),
-          // Barra de digitação simples para a aba CONVERSAS
           if (_activeTab == 'CONVERSAS' && !isReadonlyChannel && canShowInput)
             _buildMessageInputField(),
         ],
@@ -759,49 +894,72 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
                             final isSelected = contactId == _selectedContactUid;
 
-                            return InkWell(
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
                               onTap: () {
                                 setState(() {
                                   _selectedContactUid = contactId;
                                 });
                                 _fetchMessages(6, contactId);
                               },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 3.0,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            isSelected
-                                                ? _greenAccent
-                                                : Colors.transparent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        contactName,
-                                        style: GoogleFonts.shareTechMono(
+                              onSecondaryTapUp: (details) {
+                                _showPilotContextMenu(
+                                  context,
+                                  details.globalPosition,
+                                  contactId,
+                                  contactName,
+                                  true,
+                                );
+                              },
+                              onLongPressStart: (details) {
+                                _showPilotContextMenu(
+                                  context,
+                                  details.globalPosition,
+                                  contactId,
+                                  contactName,
+                                  true,
+                                );
+                              },
+                              child: Tooltip(
+                                message:
+                                    'Clique com botão direito / Toque longo para remover',
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 3.0,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: BoxDecoration(
                                           color:
                                               isSelected
                                                   ? _greenAccent
-                                                  : Colors.white,
-                                          fontSize: 11,
-                                          fontWeight:
-                                              isSelected
-                                                  ? FontWeight.bold
-                                                  : FontWeight.normal,
+                                                  : Colors.transparent,
+                                          shape: BoxShape.circle,
                                         ),
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          contactName,
+                                          style: GoogleFonts.shareTechMono(
+                                            color:
+                                                isSelected
+                                                    ? _greenAccent
+                                                    : Colors.white,
+                                            fontSize: 11,
+                                            fontWeight:
+                                                isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -853,7 +1011,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  Widget _buildSubchannelsPanelContent() {
+Widget _buildSubchannelsPanelContent() {
     final bool isBroadcast = _isBroadcastChannel(_selectedChannel);
 
     return Column(
@@ -910,18 +1068,56 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                           final bool highlightSelected =
                               isBroadcast ? false : isSelected;
 
-                          return InkWell(
+                          final String chUpper = _selectedChannel.toUpperCase();
+                          final bool isTargetChannel = chUpper == 'SETOR' ||
+                              chUpper == 'CORPORAÇÃO' ||
+                              chUpper == 'EQUIPE' ||
+                              chUpper == 'ESQUADRILHA';
+
+                          if (isTargetChannel && itemId != null) {
+                            final int currentPilotUid = _getPilotUid();
+                            final int pilotId = itemId is int
+                                ? itemId
+                                : int.tryParse(itemId.toString()) ?? 0;
+                            final bool isSelf = (pilotId == currentPilotUid);
+                            final bool isAlreadyContact = _contactsList.any(
+                              (c) => (c['pilot_uid'] ?? c['uid']) == pilotId,
+                            );
+
+                            return _PilotListTile(
+                              key: ValueKey('pilot_tile_$pilotId'),
+                              pilotUid: pilotId,
+                              pilotName: itemName,
+                              isSelected: highlightSelected,
+                              isSelf: isSelf,
+                              isAlreadyContact: isAlreadyContact,
+                              canAddContact: !isSelf && !isAlreadyContact,
+                              onContextMenu: (Offset position) {
+                                _showPilotContextMenu(
+                                  context,
+                                  position,
+                                  pilotId,
+                                  itemName,
+                                  false,
+                                );
+                              },
+                              onAddContact: () {
+                                _addContact(pilotId);
+                              },
+                            );
+                          }
+
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
                             onTap: () {
                               if (!isBroadcast) {
                                 setState(() {
                                   _selectedSubchannelUid = itemId;
                                 });
                                 int channelId = 6;
-                                if (_selectedChannel.toUpperCase() ==
-                                    'SUPORTE') {
+                                if (chUpper == 'SUPORTE') {
                                   channelId = 7;
-                                } else if (_selectedChannel.toUpperCase() ==
-                                    'COALIZÃO') {
+                                } else if (chUpper == 'COALIZÃO') {
                                   channelId = 1;
                                 }
                                 _fetchMessages(channelId, itemId);
@@ -1093,7 +1289,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Janela de Leitura que Ocupa a Altura Inteira na aba CONVERSAS
   Widget _buildInteractiveChatArea(List<Map<String, dynamic>> messages) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1201,7 +1396,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Divisão em 50% Leitura e 50% Digitação na aba MENSAGENS
   Widget _buildSplitChatArea(
     List<Map<String, dynamic>> messages,
     bool canShowInput,
@@ -1415,7 +1609,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-  // Barra de digitação simples para a aba CONVERSAS
   Widget _buildMessageInputField() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1459,6 +1652,174 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             onPressed: _sendMessage,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PilotListTile extends StatefulWidget {
+  final int pilotUid;
+  final String pilotName;
+  final bool isSelected;
+  final bool isSelf;
+  final bool isAlreadyContact;
+  final bool canAddContact;
+  final void Function(Offset position) onContextMenu;
+  final VoidCallback onAddContact;
+
+  const _PilotListTile({
+    super.key,
+    required this.pilotUid,
+    required this.pilotName,
+    required this.isSelected,
+    required this.isSelf,
+    required this.isAlreadyContact,
+    required this.canAddContact,
+    required this.onContextMenu,
+    required this.onAddContact,
+  });
+
+  @override
+  State<_PilotListTile> createState() => _PilotListTileState();
+}
+
+class _PilotListTileState extends State<_PilotListTile> {
+  bool _isHovered = false;
+  bool _showMobileAction = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const Color greenAccent = Color(0xFF00FF66);
+    final bool showAddButton =
+        widget.canAddContact && (_isHovered || _showMobileAction);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_showMobileAction) {
+            setState(() => _showMobileAction = false);
+          }
+        },
+        onSecondaryTapUp: (details) {
+          if (widget.canAddContact) {
+            widget.onContextMenu(details.globalPosition);
+          }
+        },
+        onLongPressStart: (details) {
+          if (widget.canAddContact) {
+            setState(() => _showMobileAction = true);
+            widget.onContextMenu(details.globalPosition);
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 2.0),
+          decoration: BoxDecoration(
+            color: _isHovered
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: widget.isSelected ? greenAccent : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        widget.pilotName,
+                        style: GoogleFonts.shareTechMono(
+                          color: widget.isSelected
+                              ? greenAccent
+                              : (widget.isSelf ? Colors.white70 : Colors.white),
+                          fontSize: 11,
+                          fontWeight: widget.isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (widget.isSelf) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '(VOCÊ)',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white38,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ] else if (widget.isAlreadyContact) ...[
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Já está nos seus contatos',
+                        child: Icon(
+                          Icons.check,
+                          color: greenAccent,
+                          size: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (showAddButton) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: 'Adicionar aos Contatos',
+                  child: InkWell(
+                    onTap: () {
+                      setState(() => _showMobileAction = false);
+                      widget.onAddContact();
+                    },
+                    borderRadius: BorderRadius.circular(3),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: greenAccent.withValues(alpha: 0.18),
+                        border: Border.all(color: greenAccent, width: 0.8),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.person_add_alt_1,
+                            color: greenAccent,
+                            size: 10,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '+ CONTATO',
+                            style: GoogleFonts.shareTechMono(
+                              color: greenAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
