@@ -2,17 +2,17 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
-import 'modules/messaging/messaging_module_widget.dart';
 
 class PlayerProfileScreen extends StatefulWidget {
-  final int accountId;
+  final Map<String, dynamic>? profileData;
   final String apiBaseUrl;
+  final int? accountId;
 
   const PlayerProfileScreen({
     super.key,
-    required this.accountId,
+    this.profileData,
     this.apiBaseUrl = 'http://26.239.180.177:8020',
+    this.accountId,
   });
 
   @override
@@ -20,25 +20,35 @@ class PlayerProfileScreen extends StatefulWidget {
 }
 
 class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
-  // Índice da aba ativa no rodapé (0: PERFIL, 1: MENSAGENS, etc.)
-  int _selectedIndex = 0;
-
-  bool _isLoading = true;
-  bool _isUploadingAvatar = false;
+  bool _isLoading = false;
   String? _errorMessage;
-  Map<String, dynamic>? _profileData;
+  late Map<String, dynamic>? _profileData;
 
   static const Color _cyanColor = Color(0xFF00D2FF);
-  static const Color _darkBg = Color(0xFF0A0D12);
   static const Color _panelBg = Color(0xD912161F);
 
   @override
   void initState() {
     super.initState();
-    _fetchProfileData();
+    _profileData = widget.profileData;
+
+    if (_profileData == null && widget.accountId != null) {
+      _fetchProfileData();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.profileData != oldWidget.profileData) {
+      setState(() {
+        _profileData = widget.profileData;
+      });
+    }
   }
 
   Future<void> _fetchProfileData() async {
+    setState(() => _isLoading = true);
     try {
       final response = await http.get(
         Uri.parse(
@@ -74,194 +84,46 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     }
   }
 
-  /// Função para selecionar a imagem e realizar o upload para o servidor (Compatível com Web e Mobile/Desktop)
-  Future<void> _pickAndUploadAvatar() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image == null) return; // Seleção cancelada
-
-    setState(() {
-      _isUploadingAvatar = true;
-    });
-
-    try {
-      final uri = Uri.parse('${widget.apiBaseUrl}/upload-avatar');
-      var request = http.MultipartRequest('POST', uri);
-
-      // Passa o ID da conta nos campos do form
-      request.fields['account_id'] = widget.accountId.toString();
-
-      // Lê os bytes para ser 100% compatível com a Web (Chrome)
-      final bytes = await image.readAsBytes();
-      final multipartFile = http.MultipartFile.fromBytes(
-        'avatar',
-        bytes,
-        filename: image.name.isNotEmpty ? image.name : 'avatar.jpg',
-      );
-
-      request.files.add(multipartFile);
-
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        await _fetchProfileData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFF00D2FF),
-            content: Text('AVATAR ATUALIZADO COM SUCESSO!'),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFFF2A6D),
-            content: Text('FALHA NO UPLOAD (${response.statusCode})'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFFF2A6D),
-          content: Text('ERRO NO UPLOAD: $e'),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUploadingAvatar = false;
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _darkBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Corpo dinâmico de acordo com a aba selecionada no rodapé
-            Expanded(child: _buildSelectedTabContent()),
-            // Rodapé com navegação segura entre as telas do jogo
-            _buildBottomNavigationBar(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Gerencia qual conteúdo exibir com base na aba selecionada no rodapé
-  Widget _buildSelectedTabContent() {
-    switch (_selectedIndex) {
-      case 0: // PERFIL
-        return _isLoading
-            ? const Center(child: CircularProgressIndicator(color: _cyanColor))
-            : _errorMessage != null
-            ? _buildErrorView()
-            : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 12),
-                  _buildLocationBar(),
-                  const SizedBox(height: 12),
-                  _buildCombatStatsBar(),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (constraints.maxWidth >= 800) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: _buildReputationPanel()),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildSkillsPanel()),
-                          ],
-                        );
-                      } else {
-                        return Column(
-                          children: [
-                            _buildReputationPanel(),
-                            const SizedBox(height: 16),
-                            _buildSkillsPanel(),
-                          ],
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            );
-      case 1: // MENSAGENS
-        return MessagingModuleWidget(
-          profileData: _profileData,
-          apiBaseUrl: widget.apiBaseUrl,
-        );
-      case 2: // HANGAR
-        return _buildPlaceholderScreen('HANGAR DE NAVES E MÓDULOS');
-      case 3: // CONTRATOS
-        return _buildPlaceholderScreen('QUADRO DE CONTRATOS E MISSÕES');
-      case 4: // MERCADO
-        return _buildPlaceholderScreen('MERCADO GALÁCTICO DE SUPRIMENTOS');
-      case 5: // ESTOQUE
-        return _buildPlaceholderScreen('ESTOQUE DE CARGA E RECURSOS');
-      case 6: // FÁBRICA
-        return _buildPlaceholderScreen('FÁBRICA E LINHA DE PRODUÇÃO');
-      default:
-        return _buildPlaceholderScreen('TELA DESCONHECIDA');
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator(color: _cyanColor));
     }
-  }
 
-  /// Widget coringa com padrão visual sci-fi para abas em desenvolvimento (evita travar o app)
-  Widget _buildPlaceholderScreen(String title) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(24),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: _panelBg,
-          border: Border.all(color: _cyanColor, width: 1.2),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '// STATUS DO SISTEMA:',
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: GoogleFonts.shareTechMono(
-                color: _cyanColor,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '[ MÓDULO EM DESENVOLVIMENTO ]',
-              style: GoogleFonts.shareTechMono(
-                color: Colors.greenAccent,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
+    if (_errorMessage != null) {
+      return _buildErrorView();
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildCombatStatsBar(),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 800) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _buildReputationPanel()),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildSkillsPanel()),
+                  ],
+                );
+              } else {
+                return Column(
+                  children: [
+                    _buildReputationPanel(),
+                    const SizedBox(height: 16),
+                    _buildSkillsPanel(),
+                  ],
+                );
+              }
+            },
+          ),
+        ],
       ),
     );
   }
@@ -296,137 +158,12 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    final op = _profileData?['operator'] ?? {};
-    final String? avatarUrl = op['avatar_url'];
-
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-
-    final String fullAvatarUrl =
-        (avatarUrl != null && avatarUrl.isNotEmpty)
-            ? (avatarUrl.startsWith('http')
-                ? '$avatarUrl?t=$timestamp'
-                : '${widget.apiBaseUrl}$avatarUrl?t=$timestamp')
-            : '';
-
-    return Row(
-      children: [
-        Tooltip(
-          message: 'Clique para alterar a imagem do avatar',
-          child: GestureDetector(
-            onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-            child: Container(
-              width: 50,
-              height: 50,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: _cyanColor.withValues(alpha: 0.6),
-                  width: 1.2,
-                ),
-              ),
-              child:
-                  _isUploadingAvatar
-                      ? const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            color: _cyanColor,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                      : fullAvatarUrl.isNotEmpty
-                      ? Image.network(
-                        fullAvatarUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder:
-                            (context, error, stackTrace) => const Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 30,
-                            ),
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                color: _cyanColor,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          );
-                        },
-                      )
-                      : const Icon(Icons.person, color: Colors.white, size: 30),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'OPERADOR: ${op['name'] ?? 'N/A'}',
-                style: GoogleFonts.shareTechMono(
-                  color: _cyanColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'CORPORAÇÃO: ${op['corporation'] ?? 'N/A'}',
-                style: GoogleFonts.shareTechMono(
-                  color: _cyanColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          'CRÉDITOS: ${_formatCredits(op['credits'])}',
-          style: GoogleFonts.shareTechMono(
-            color: _cyanColor,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLocationBar() {
-    final op = _profileData?['operator'] ?? {};
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        'LOCALIZAÇÃO: ${op['location'] ?? 'DESCONHECIDA'}',
-        style: GoogleFonts.shareTechMono(
-          color: Colors.white,
-          fontSize: 13,
-          letterSpacing: 1.1,
-        ),
-      ),
-    );
-  }
-
   Widget _buildCombatStatsBar() {
     final stats = _profileData?['stats'] ?? {};
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
+        color: _panelBg,
         border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
       ),
       child: Row(
@@ -629,78 +366,6 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
           child,
         ],
       ),
-    );
-  }
-
-  Widget _buildBottomNavigationBar() {
-    final tabs = [
-      'PERFIL',
-      'MENSAGENS',
-      'HANGAR',
-      'CONTRATOS',
-      'MERCADO',
-      'ESTOQUE',
-      'FÁBRICA',
-    ];
-
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      color: _darkBg,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: List.generate(tabs.length, (index) {
-          final isSelected = index == _selectedIndex;
-          return Expanded(
-            child: InkWell(
-              onTap: () {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isSelected ? Colors.greenAccent : _cyanColor,
-                    width: isSelected ? 2.0 : 1.0,
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.square,
-                      size: 10,
-                      color: isSelected ? Colors.greenAccent : Colors.white,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      tabs[index],
-                      style: GoogleFonts.shareTechMono(
-                        color: isSelected ? Colors.greenAccent : Colors.white,
-                        fontSize: 9,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  String _formatCredits(dynamic value) {
-    if (value == null) return '0';
-    final int parsedValue =
-        (value is num) ? value.toInt() : int.tryParse(value.toString()) ?? 0;
-    return parsedValue.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (Match m) => '${m[1]}.',
     );
   }
 }

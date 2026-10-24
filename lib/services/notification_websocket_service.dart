@@ -88,8 +88,17 @@ class NotificationWebSocketService {
         (message) {
           try {
             final parsed = jsonDecode(message);
-            final type = parsed['type'];
-            final data = parsed['data'] ?? {};
+            final Map<String, dynamic> rootMap =
+                parsed is Map
+                    ? Map<String, dynamic>.from(parsed)
+                    : <String, dynamic>{};
+
+            final type = rootMap['type'] ?? '';
+            final rawData = rootMap['data'] ?? {};
+            final Map<String, dynamic> data =
+                rawData is Map
+                    ? Map<String, dynamic>.from(rawData)
+                    : <String, dynamic>{};
 
             if (type == 'CHAT_NOTIFICATION' || type == 'EMAIL_NOTIFICATION') {
               // Dispara notificação nativa visual e sonora

@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'reset_password_screen.dart';
 import 'register_screen.dart';
-import 'player_profile_screen.dart'; // Importação da tela de perfil
+import 'main_layout_screen.dart'; // Importação do layout principal unificado
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,12 +51,28 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200) {
         int accountId = dados['account_id'];
 
+        // Busca os dados completos do perfil do operador antes de abrir o layout principal
+        var profileResponse = await http.get(
+          Uri.parse('$baseUrl/player-profile?account_id=$accountId'),
+        );
+
+        if (!mounted) return;
+
+        Map<String, dynamic> profileData = {};
+        if (profileResponse.statusCode == 200) {
+          var profileJson = jsonDecode(profileResponse.body);
+          if (profileJson['status'] == 'sucesso') {
+            profileData = profileJson['data'];
+          }
+        }
+
+        // Navega para o MainLayoutScreen mantendo cabeçalho e rodapé fixos
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder:
-                (context) => PlayerProfileScreen(
-                  accountId: accountId,
+                (context) => MainLayoutScreen(
+                  profileData: profileData,
                   apiBaseUrl: baseUrl,
                 ),
           ),

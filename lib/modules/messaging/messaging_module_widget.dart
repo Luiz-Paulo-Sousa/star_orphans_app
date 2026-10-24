@@ -9,11 +9,15 @@ import 'views/readonly_chat_view.dart';
 class MessagingModuleWidget extends StatefulWidget {
   final Map<String, dynamic>? profileData;
   final String apiBaseUrl;
+  final String initialTab;
+  final VoidCallback? onMessagesRead;
 
   const MessagingModuleWidget({
     super.key,
     this.profileData,
     this.apiBaseUrl = 'http://26.239.180.177:8020',
+    this.initialTab = 'CONVERSAS',
+    this.onMessagesRead,
   });
 
   @override
@@ -55,9 +59,18 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   @override
   void initState() {
     super.initState();
+    _activeTab = widget.initialTab;
     _fetchPilotSector();
     _fetchMessageChannels();
     _fetchContactsList();
+  }
+
+  @override
+  void didUpdateWidget(covariant MessagingModuleWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTab != oldWidget.initialTab && widget.initialTab != _activeTab) {
+      _switchTab(widget.initialTab);
+    }
   }
 
   int _getPilotUid() {
@@ -117,7 +130,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         });
       }
     } catch (e) {
-      print('Erro ao buscar canais de mensagens: $e');
+      debugPrint('Erro ao buscar canais de mensagens: $e');
       setState(() {
         _channelsList = [
           {'uid': 1, 'description': 'COALIZÃO'},
@@ -169,7 +182,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         });
       }
     } catch (e) {
-      print('Erro ao buscar contatos: $e');
+      debugPrint('Erro ao buscar contatos: $e');
     }
   }
 
@@ -181,10 +194,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       final response = await http.post(
         Uri.parse('${widget.apiBaseUrl}/api/contacts/add'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'pilot_uid': pilotUid,
-          'contact_uid': contactUid,
-        }),
+        body: jsonEncode({'pilot_uid': pilotUid, 'contact_uid': contactUid}),
       );
 
       if (response.statusCode == 201) {
@@ -198,12 +208,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         final err = jsonDecode(response.body);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(err['error'] ?? 'Erro ao adicionar contato.')),
+            SnackBar(
+              content: Text(err['error'] ?? 'Erro ao adicionar contato.'),
+            ),
           );
         }
       }
     } catch (e) {
-      print('Erro ao adicionar contato: $e');
+      debugPrint('Erro ao adicionar contato: $e');
     }
   }
 
@@ -213,7 +225,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     try {
       final response = await http.delete(
-        Uri.parse('${widget.apiBaseUrl}/api/contacts/remove/$pilotUid/$contactUid'),
+        Uri.parse(
+          '${widget.apiBaseUrl}/api/contacts/remove/$pilotUid/$contactUid',
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -231,7 +245,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         }
       }
     } catch (e) {
-      print('Erro ao remover contato: $e');
+      debugPrint('Erro ao remover contato: $e');
     }
   }
 
@@ -271,8 +285,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         ),
       );
     } else {
-      final bool isAlreadyContact =
-          _contactsList.any((c) => (c['pilot_uid'] ?? c['uid']) == pilotUid);
+      final bool isAlreadyContact = _contactsList.any(
+        (c) => (c['pilot_uid'] ?? c['uid']) == pilotUid,
+      );
       if (!isAlreadyContact) {
         menuItems.add(
           PopupMenuItem<String>(
@@ -337,7 +352,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         });
       }
     } catch (e) {
-      print('Erro ao buscar setor do piloto: $e');
+      debugPrint('Erro ao buscar setor do piloto: $e');
     }
   }
 
@@ -486,7 +501,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         });
       }
     } catch (e) {
-      print('Erro ao carregar sub-canais para $_selectedChannel: $e');
+      debugPrint('Erro ao carregar sub-canais para $_selectedChannel: $e');
     } finally {
       setState(() {
         _isLoadingSubchannels = false;
@@ -514,20 +529,69 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           _messagesList = data is List ? data : [];
         });
         _scrollToBottom();
+        // Marca as mensagens exibidas como lidas automaticamente
+        _markCurrentMessagesAsRead(channelUid, subchannelUid, accountUid, messageType);
       } else {
         setState(() {
           _messagesList = [];
         });
       }
     } catch (e) {
-      print('Erro ao carregar mensagens: $e');
+      debugPrint('Erro ao carregar mensagens: $e');
       setState(() {
         _messagesList = [];
       });
     } finally {
-      setState(() {
-        _isLoadingMessages = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingMessages = false;
+        });
+      }
+    }
+  }
+
+  /// Marca mensagens recebidas como lidas na API e notifica a tela principal
+  Future<void> _markCurrentMessagesAsRead(
+    int channelUid,
+    int subchannelUid,
+    int accountUid,
+    int messageType,
+  ) async {
+    if (accountUid == 0) return;
+
+    // Verifica se há alguma mensagem recebida não lida na lista
+    final hasUnread = _messagesList.any((m) {
+      if (m is Map) {
+        final isRead = m['is_read'];
+        return isRead == 0 || isRead == '0' || isRead == false;
+      }
+      return false;
+    });
+
+    if (!hasUnread) return;
+
+    try {
+      final response = await http.put(
+        Uri.parse(
+          '${widget.apiBaseUrl}/api/messages/mark-read/$channelUid/$subchannelUid?destinationUid=$accountUid&type=$messageType',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            for (var m in _messagesList) {
+              if (m is Map) {
+                m['is_read'] = 1;
+              }
+            }
+          });
+        }
+        // Notifica o componente pai para atualizar os ícones de notificação
+        widget.onMessagesRead?.call();
+      }
+    } catch (e) {
+      debugPrint('Erro ao marcar mensagens como lidas: $e');
     }
   }
 
@@ -596,7 +660,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         _fetchMessages(channelUid, targetSubchannel);
       }
     } catch (e) {
-      print('Exceção ao enviar mensagem: $e');
+      debugPrint('Exceção ao enviar mensagem: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -631,12 +695,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  String _formatCredits(dynamic credits) {
-    if (credits == null) return '0';
-    final n = int.tryParse(credits.toString()) ?? 0;
-    return n.toString();
-  }
-
   @override
   void dispose() {
     _messageController.dispose();
@@ -653,6 +711,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     if (tabName == 'MENSAGENS') {
       if (_selectedContactUid != null) {
         _fetchMessages(6, _selectedContactUid!);
+      } else if (_contactsList.isNotEmpty) {
+        final firstContact = _contactsList[0];
+        _selectedContactUid = firstContact['pilot_uid'] ?? firstContact['uid'];
+        if (_selectedContactUid != null) {
+          _fetchMessages(6, _selectedContactUid!);
+        }
       }
     } else {
       _fetchSubchannelsForCurrentChannel();
@@ -701,10 +765,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildHeader(),
-          const SizedBox(height: 8),
-          _buildLocationBar(),
-          const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
             child: SizedBox(
@@ -976,7 +1036,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     );
   }
 
-Widget _buildSubchannelsPanelContent() {
+  Widget _buildSubchannelsPanelContent() {
     final bool isBroadcast = _isBroadcastChannel(_selectedChannel);
 
     return Column(
@@ -1034,16 +1094,18 @@ Widget _buildSubchannelsPanelContent() {
                               isBroadcast ? false : isSelected;
 
                           final String chUpper = _selectedChannel.toUpperCase();
-                          final bool isTargetChannel = chUpper == 'SETOR' ||
+                          final bool isTargetChannel =
+                              chUpper == 'SETOR' ||
                               chUpper == 'CORPORAÇÃO' ||
                               chUpper == 'EQUIPE' ||
                               chUpper == 'ESQUADRILHA';
 
                           if (isTargetChannel && itemId != null) {
                             final int currentPilotUid = _getPilotUid();
-                            final int pilotId = itemId is int
-                                ? itemId
-                                : int.tryParse(itemId.toString()) ?? 0;
+                            final int pilotId =
+                                itemId is int
+                                    ? itemId
+                                    : int.tryParse(itemId.toString()) ?? 0;
                             final bool isSelf = (pilotId == currentPilotUid);
                             final bool isAlreadyContact = _contactsList.any(
                               (c) => (c['pilot_uid'] ?? c['uid']) == pilotId,
@@ -1131,100 +1193,6 @@ Widget _buildSubchannelsPanelContent() {
                   ),
         ),
       ],
-    );
-  }
-
-  Widget _buildHeader() {
-    final op = widget.profileData?['operator'] ?? {};
-    final String? avatarUrl = op['avatar_url'];
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final String fullAvatarUrl =
-        (avatarUrl != null && avatarUrl.isNotEmpty)
-            ? (avatarUrl.startsWith('http')
-                ? '$avatarUrl?t=$timestamp'
-                : '${widget.apiBaseUrl}$avatarUrl?t=$timestamp')
-            : '';
-
-    return Row(
-      children: [
-        Container(
-          width: 45,
-          height: 45,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: _cyanColor.withValues(alpha: 0.6),
-              width: 1.2,
-            ),
-          ),
-          child:
-              fullAvatarUrl.isNotEmpty
-                  ? Image.network(
-                    fullAvatarUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder:
-                        (_, __, ___) => const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                  )
-                  : const Icon(Icons.person, color: Colors.white, size: 26),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'OPERADOR: ${op['name'] ?? 'N/A'}',
-                style: GoogleFonts.shareTechMono(
-                  color: _cyanColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'CORPORAÇÃO: ${op['corporation'] ?? 'N/A'}',
-                style: GoogleFonts.shareTechMono(
-                  color: _cyanColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          'CRÉDITOS: ${_formatCredits(op['credits'])}',
-          style: GoogleFonts.shareTechMono(
-            color: _cyanColor,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLocationBar() {
-    final op = widget.profileData?['operator'] ?? {};
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        'LOCALIZAÇÃO: ${op['location'] ?? 'DESCONHECIDA'}',
-        style: GoogleFonts.shareTechMono(
-          color: Colors.white,
-          fontSize: 12,
-          letterSpacing: 1.1,
-        ),
-      ),
     );
   }
 
@@ -1681,9 +1649,10 @@ class _PilotListTileState extends State<_PilotListTile> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 2.0),
           decoration: BoxDecoration(
-            color: _isHovered
-                ? Colors.white.withValues(alpha: 0.05)
-                : Colors.transparent,
+            color:
+                _isHovered
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(3),
           ),
           child: Row(
@@ -1704,13 +1673,17 @@ class _PilotListTileState extends State<_PilotListTile> {
                       child: Text(
                         widget.pilotName,
                         style: GoogleFonts.shareTechMono(
-                          color: widget.isSelected
-                              ? greenAccent
-                              : (widget.isSelf ? Colors.white70 : Colors.white),
+                          color:
+                              widget.isSelected
+                                  ? greenAccent
+                                  : (widget.isSelf
+                                      ? Colors.white70
+                                      : Colors.white),
                           fontSize: 11,
-                          fontWeight: widget.isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                          fontWeight:
+                              widget.isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1728,11 +1701,7 @@ class _PilotListTileState extends State<_PilotListTile> {
                       const SizedBox(width: 4),
                       const Tooltip(
                         message: 'Já está nos seus contatos',
-                        child: Icon(
-                          Icons.check,
-                          color: greenAccent,
-                          size: 11,
-                        ),
+                        child: Icon(Icons.check, color: greenAccent, size: 11),
                       ),
                     ],
                   ],
@@ -1843,9 +1812,10 @@ class _ContactListTileState extends State<_ContactListTile> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 2.0),
           decoration: BoxDecoration(
-            color: _isHovered
-                ? Colors.white.withValues(alpha: 0.05)
-                : Colors.transparent,
+            color:
+                _isHovered
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(3),
           ),
           child: Row(
@@ -1865,9 +1835,8 @@ class _ContactListTileState extends State<_ContactListTile> {
                   style: GoogleFonts.shareTechMono(
                     color: widget.isSelected ? greenAccent : Colors.white,
                     fontSize: 11,
-                    fontWeight: widget.isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    fontWeight:
+                        widget.isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
