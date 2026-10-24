@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 
 import 'player_profile_screen.dart';
@@ -29,6 +30,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   bool _hasUnreadChat = false;
   bool _hasUnreadEmail = false;
   bool _isUploadingAvatar = false;
+  Timer? _unreadSyncTimer;
 
   late Map<String, dynamic> _currentProfileData;
 
@@ -42,6 +44,16 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     _currentProfileData = Map<String, dynamic>.from(widget.profileData);
     _initRealtimeConnection();
     _checkUnreadMessagesOnStartup();
+    // Heartbeat a cada 10 segundos para manter os ícones de notificação 100% sincronizados
+    _unreadSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _checkUnreadMessagesOnStartup();
+    });
+  }
+
+  @override
+  void dispose() {
+    _unreadSyncTimer?.cancel();
+    super.dispose();
   }
 
   int _getAccountId() {
@@ -89,8 +101,8 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
         if (mounted) {
           setState(() {
-            _hasUnreadChat = data['has_unread_chat'] ?? false;
-            _hasUnreadEmail = data['has_unread_email'] ?? false;
+            _hasUnreadChat = data['has_unread_chat'] == true;
+            _hasUnreadEmail = data['has_unread_email'] == true;
           });
           debugPrint('=== [DEBUG GLOBAL] Estados finais -> Chat: $_hasUnreadChat | Email: $_hasUnreadEmail ===');
         }
@@ -525,6 +537,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                 setState(() {
                   _selectedIndex = index;
                 });
+                _checkUnreadMessagesOnStartup();
               },
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 2),

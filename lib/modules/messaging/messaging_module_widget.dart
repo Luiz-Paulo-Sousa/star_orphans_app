@@ -568,7 +568,11 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       return false;
     });
 
-    if (!hasUnread) return;
+    if (!hasUnread) {
+      // Notifica o pai para sincronizar os ícones do cabeçalho
+      widget.onMessagesRead?.call();
+      return;
+    }
 
     try {
       final response = await http.put(
@@ -707,6 +711,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     setState(() {
       _activeTab = tabName;
     });
+
+    // Notifica sincronização de ícones de notificação ao trocar de aba
+    widget.onMessagesRead?.call();
 
     if (tabName == 'MENSAGENS') {
       if (_selectedContactUid != null) {
