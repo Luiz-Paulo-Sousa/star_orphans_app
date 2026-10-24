@@ -1,11 +1,11 @@
 {
-    "name": "teste_flutter_01",
-    "short_name": "teste_flutter_01",
+    "name": "Star Orphans Companion",
+    "short_name": "Companion",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0A0D12",
+    "theme_color": "#00D2FF",
+    "description": "Star Orphans Companion Gamer App",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

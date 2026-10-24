@@ -34,7 +34,10 @@ class _LoginScreenState extends State<LoginScreen> {
     var digest = sha256.convert(bytes);
     String passwordHash = digest.toString();
 
-    const String baseUrl = 'http://26.239.180.177:8020';
+    final String host = (Uri.base.host.isNotEmpty && Uri.base.host != 'localhost' && Uri.base.host != '127.0.0.1')
+        ? Uri.base.host
+        : '26.239.180.177';
+    final String baseUrl = 'http://$host:8020';
     var url = Uri.parse('$baseUrl/login');
 
     try {
