@@ -645,6 +645,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
 
     final senderId = _getPilotUid();
+    final int messageType = _activeTab == 'CONVERSAS' ? 0 : 1;
+    final String notifType = _activeTab == 'CONVERSAS' ? 'chat' : 'email';
 
     try {
       final response = await http.post(
@@ -656,6 +658,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           'subchannel_id': targetSubchannel,
           'sender_id': senderId,
           'content': text,
+          'message_type': messageType,
+          'notification_type': notifType,
         }),
       );
 
