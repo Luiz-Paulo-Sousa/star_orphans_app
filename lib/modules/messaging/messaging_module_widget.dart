@@ -12,6 +12,7 @@ class MessagingModuleWidget extends StatefulWidget {
   final String apiBaseUrl;
   final String initialTab;
   final VoidCallback? onMessagesRead;
+  final ValueChanged<String>? onTabChanged;
 
   const MessagingModuleWidget({
     super.key,
@@ -19,6 +20,7 @@ class MessagingModuleWidget extends StatefulWidget {
     this.apiBaseUrl = 'http://26.239.180.177:8020',
     this.initialTab = 'CONVERSAS',
     this.onMessagesRead,
+    this.onTabChanged,
   });
 
   @override
@@ -971,6 +973,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       _activeTab = tabName;
     });
 
+    widget.onTabChanged?.call(tabName);
     // Notifica sincronização de ícones de notificação ao trocar de aba
     widget.onMessagesRead?.call();
     _fetchUnreadDetails();
@@ -1037,22 +1040,20 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!isTypingOnMobile) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: _leftPanelWidth,
-                child: Row(
-                  children: [
-                    Expanded(child: _buildTopTab('CONVERSAS')),
-                    const SizedBox(width: 4),
-                    Expanded(child: _buildTopTab('MENSAGENS')),
-                  ],
-                ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: _leftPanelWidth,
+              child: Row(
+                children: [
+                  Expanded(child: _buildTopTab('CONVERSAS')),
+                  const SizedBox(width: 4),
+                  Expanded(child: _buildTopTab('MENSAGENS')),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
+          const SizedBox(height: 8),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1083,8 +1084,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!isTypingOnMobile) ...[
-                        SizedBox(
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        height: isTypingOnMobile ? 0 : 120,
+                        curve: Curves.easeInOut,
+                        clipBehavior: Clip.hardEdge,
+                        child: SizedBox(
                           width:
                               _activeTab != 'CONVERSAS'
                                   ? _leftPanelWidth
@@ -1092,9 +1097,15 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                           height: 120,
                           child: leftPanelsWidget,
                         ),
-                        const SizedBox(height: 8),
-                      ],
-                      Expanded(child: mainChatContent),
+                      ),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        height: isTypingOnMobile ? 0 : 8,
+                      ),
+                      Expanded(
+                        key: const ValueKey('mobile_main_chat_expanded'),
+                        child: mainChatContent,
+                      ),
                     ],
                   );
                 } else {

@@ -250,9 +250,18 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         child: Column(
           children: [
             _buildGlobalHeader(),
-            if (!isKeyboardOpen || !isMobile) _buildLocationBar(),
-            Expanded(child: _buildSelectedTabContent()),
-            if (!isKeyboardOpen || !isMobile) _buildBottomNavigationBar(),
+            _buildLocationBar(),
+            Expanded(
+              key: const ValueKey('main_layout_screen_expanded'),
+              child: _buildSelectedTabContent(),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: (isKeyboardOpen && isMobile) ? 0 : 60,
+              curve: Curves.easeInOut,
+              clipBehavior: Clip.hardEdge,
+              child: _buildBottomNavigationBar(),
+            ),
           ],
         ),
       ),
@@ -452,9 +461,13 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         );
       case 1:
         return MessagingModuleWidget(
+          key: const PageStorageKey('messaging_module_widget'),
           profileData: _currentProfileData,
           apiBaseUrl: widget.apiBaseUrl,
           initialTab: _messagingInitialTab,
+          onTabChanged: (tab) {
+            _messagingInitialTab = tab;
+          },
           onMessagesRead: _checkUnreadMessagesOnStartup,
         );
       case 2:
