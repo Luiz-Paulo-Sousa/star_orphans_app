@@ -254,9 +254,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         child: Column(
           children: [
             _buildGlobalHeader(),
-            hideBottomBar
-                ? const SizedBox.shrink()
-                : _buildLocationBar(),
+            _buildLocationBar(),
             Expanded(
               child: _buildSelectedTabContent(),
             ),

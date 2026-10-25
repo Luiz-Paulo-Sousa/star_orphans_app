@@ -1057,7 +1057,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               ),
             ),
           ),
-          SizedBox(height: isTypingOnMobile ? 4 : 8),
+          const SizedBox(height: 8),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1079,7 +1079,6 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                             ? _buildSplitChatArea(
                               formattedMessages,
                               canShowInput,
-                              isTypingOnMobile: isTypingOnMobile,
                             )
                             : _buildInteractiveChatArea(formattedMessages));
 
@@ -1680,18 +1679,14 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   Widget _buildSplitChatArea(
     List<Map<String, dynamic>> messages,
-    bool canShowInput, {
-    bool isTypingOnMobile = false,
-  }) {
-    final double cardPadding = isTypingOnMobile ? 8.0 : 12.0;
-    final double gap = isTypingOnMobile ? 4.0 : 8.0;
-
+    bool canShowInput,
+  ) {
     return Column(
       children: [
         Expanded(
           flex: 1,
           child: Container(
-            padding: EdgeInsets.all(cardPadding),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: _panelBg,
               border: Border.all(color: _cyanColor, width: 1.2),
@@ -1708,7 +1703,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: isTypingOnMobile ? 4 : 8),
+                const SizedBox(height: 8),
                 Expanded(
                   child:
                       _isLoadingMessages
@@ -1802,13 +1797,13 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           ),
         ),
 
-        SizedBox(height: gap),
+        const SizedBox(height: 8),
 
         if (canShowInput)
           Expanded(
             flex: 1,
             child: Container(
-              padding: EdgeInsets.all(cardPadding),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: _panelBg,
                 border: Border.all(color: _cyanColor, width: 1.2),
