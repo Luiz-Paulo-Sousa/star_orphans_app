@@ -250,6 +250,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     return Scaffold(
       backgroundColor: _darkBg,
       body: SafeArea(
+        bottom: !hideBottomBar,
         child: Column(
           children: [
             _buildGlobalHeader(),

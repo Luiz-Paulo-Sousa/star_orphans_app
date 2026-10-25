@@ -1035,7 +1035,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final bool isTypingOnMobile = isMobileScreen && (_messageFocusNode.hasFocus || isKeyboardOpen);
 
     return Padding(
-      padding: const EdgeInsets.all(12.0),
+      padding: EdgeInsets.fromLTRB(
+        12.0,
+        12.0,
+        12.0,
+        isTypingOnMobile ? 2.0 : 12.0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1112,9 +1117,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               },
             ),
           ),
-          const SizedBox(height: 8),
-          if (_activeTab == 'CONVERSAS' && !isReadonlyChannel && canShowInput)
+          if (_activeTab == 'CONVERSAS' && !isReadonlyChannel && canShowInput) ...[
+            const SizedBox(height: 8),
             _buildMessageInputField(),
+          ],
         ],
       ),
     );
