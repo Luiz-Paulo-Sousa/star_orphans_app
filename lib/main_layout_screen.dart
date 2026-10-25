@@ -240,15 +240,19 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bool isKeyboardOpen = bottomInset > 60;
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
     return Scaffold(
       backgroundColor: _darkBg,
       body: SafeArea(
         child: Column(
           children: [
             _buildGlobalHeader(),
-            _buildLocationBar(),
+            if (!isKeyboardOpen || !isMobile) _buildLocationBar(),
             Expanded(child: _buildSelectedTabContent()),
-            _buildBottomNavigationBar(),
+            if (!isKeyboardOpen || !isMobile) _buildBottomNavigationBar(),
           ],
         ),
       ),

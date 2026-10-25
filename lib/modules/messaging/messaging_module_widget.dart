@@ -61,6 +61,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _messageFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -70,6 +71,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     _fetchMessageChannels();
     _fetchContactsList();
     _fetchUnreadDetails();
+
+    _messageFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
 
     // Ouvinte em tempo real via WebSocket
     _wsSubscription = NotificationWebSocketService.instance.eventStream.listen((event) {
@@ -933,10 +938,28 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
+  String _getSelectedContactName() {
+    if (_contactsList.isEmpty || _selectedContactUid == null) {
+      return 'CONTATO:';
+    }
+    try {
+      final c = _contactsList.firstWhere(
+        (contact) => (contact['pilot_uid'] ?? contact['uid']) == _selectedContactUid,
+        orElse: () => null,
+      );
+      if (c != null) {
+        final name = (c['pilot'] ?? c['name'] ?? c['username'] ?? 'DESCONHECIDO').toString().toUpperCase();
+        return 'CONTATO: $name';
+      }
+    } catch (_) {}
+    return 'CONTATO:';
+  }
+
   @override
   void dispose() {
     _unreadPollTimer?.cancel();
     _wsSubscription?.cancel();
+    _messageFocusNode.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -1004,25 +1027,32 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     final readonlyTitle = '${_getSelectedSubchannelName()} INFORMA';
 
+    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bool isKeyboardOpen = bottomInset > 60;
+    final bool isMobileScreen = MediaQuery.of(context).size.width < 600;
+    final bool isTypingOnMobile = isMobileScreen && (_messageFocusNode.hasFocus || isKeyboardOpen);
+
     return Padding(
       padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: SizedBox(
-              width: _leftPanelWidth,
-              child: Row(
-                children: [
-                  Expanded(child: _buildTopTab('CONVERSAS')),
-                  const SizedBox(width: 4),
-                  Expanded(child: _buildTopTab('MENSAGENS')),
-                ],
+          if (!isTypingOnMobile) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: _leftPanelWidth,
+                child: Row(
+                  children: [
+                    Expanded(child: _buildTopTab('CONVERSAS')),
+                    const SizedBox(width: 4),
+                    Expanded(child: _buildTopTab('MENSAGENS')),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ],
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1053,15 +1083,17 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        width:
-                            _activeTab != 'CONVERSAS'
-                                ? _leftPanelWidth
-                                : double.infinity,
-                        height: 120,
-                        child: leftPanelsWidget,
-                      ),
-                      const SizedBox(height: 8),
+                      if (!isTypingOnMobile) ...[
+                        SizedBox(
+                          width:
+                              _activeTab != 'CONVERSAS'
+                                  ? _leftPanelWidth
+                                  : double.infinity,
+                          height: 120,
+                          child: leftPanelsWidget,
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       Expanded(child: mainChatContent),
                     ],
                   );
@@ -1656,7 +1688,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'CONTATO:',
+                  _getSelectedContactName(),
                   style: GoogleFonts.shareTechMono(
                     color: Colors.white,
                     fontSize: 13,
@@ -1784,6 +1816,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   Expanded(
                     child: TextField(
                       controller: _messageController,
+                      focusNode: _messageFocusNode,
                       maxLines: null,
                       expands: true,
                       keyboardType: TextInputType.multiline,
@@ -1863,6 +1896,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           Expanded(
             child: TextField(
               controller: _messageController,
+              focusNode: _messageFocusNode,
               style: GoogleFonts.shareTechMono(
                 color: Colors.white,
                 fontSize: 12,
