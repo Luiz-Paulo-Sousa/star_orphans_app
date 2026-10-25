@@ -187,13 +187,17 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildReputationPanel() {
-    final List reputations = _profileData?['reputations'] ?? [];
+    final List reputations = (_profileData?['reputations'] as List?) ?? [];
     return _buildOuterBox(
       title: 'REPUTAÇÃO:',
       child: Column(
         children:
             reputations.map((rep) {
-              final int val = (rep['percentage'] ?? 0) as int;
+              final dynamic raw = rep['percentage'];
+              final num numVal = (raw is num)
+                  ? raw
+                  : (num.tryParse(raw?.toString() ?? '0') ?? 0);
+              final int val = numVal.toInt();
               final bool isPositive = val >= 0;
               final Color barColor =
                   isPositive
@@ -265,7 +269,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   }
 
   Widget _buildSkillsPanel() {
-    final skills = _profileData?['skills'] ?? {};
+    final skills = (_profileData?['skills'] as Map?) ?? {};
     final skillList = [
       {'name': 'EXPLORADOR', 'val': skills['explorer'] ?? 0},
       {'name': 'MINERADOR', 'val': skills['extractor'] ?? 0},
@@ -281,7 +285,11 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
       child: Column(
         children:
             skillList.map((skill) {
-              final int val = (skill['val'] as num).toInt();
+              final dynamic raw = skill['val'];
+              final num numVal = (raw is num)
+                  ? raw
+                  : (num.tryParse(raw?.toString() ?? '0') ?? 0);
+              final int val = numVal.toInt();
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Row(

@@ -185,6 +185,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
       if (response.statusCode == 200) {
         await _refreshProfileData();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: Color(0xFF00D2FF),
@@ -192,6 +193,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           ),
         );
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: const Color(0xFFFF2A6D),
@@ -240,10 +242,6 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final bool isKeyboardOpen = bottomInset > 60;
-    final bool isMobile = MediaQuery.of(context).size.width < 600;
-
     return Scaffold(
       backgroundColor: _darkBg,
       body: SafeArea(
@@ -252,16 +250,9 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
             _buildGlobalHeader(),
             _buildLocationBar(),
             Expanded(
-              key: const ValueKey('main_layout_screen_expanded'),
               child: _buildSelectedTabContent(),
             ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: (isKeyboardOpen && isMobile) ? 0 : 60,
-              curve: Curves.easeInOut,
-              clipBehavior: Clip.hardEdge,
-              child: _buildBottomNavigationBar(),
-            ),
+            _buildBottomNavigationBar(),
           ],
         ),
       ),

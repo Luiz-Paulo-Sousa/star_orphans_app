@@ -1089,13 +1089,18 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                         height: isTypingOnMobile ? 0 : 120,
                         curve: Curves.easeInOut,
                         clipBehavior: Clip.hardEdge,
-                        child: SizedBox(
-                          width:
-                              _activeTab != 'CONVERSAS'
-                                  ? _leftPanelWidth
-                                  : double.infinity,
-                          height: 120,
-                          child: leftPanelsWidget,
+                        child: OverflowBox(
+                          minHeight: 120,
+                          maxHeight: 120,
+                          alignment: Alignment.topLeft,
+                          child: SizedBox(
+                            width:
+                                _activeTab != 'CONVERSAS'
+                                    ? _leftPanelWidth
+                                    : double.infinity,
+                            height: 120,
+                            child: leftPanelsWidget,
+                          ),
                         ),
                       ),
                       AnimatedContainer(
