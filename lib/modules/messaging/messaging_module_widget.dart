@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 
+import '../../services/notification_websocket_service.dart';
 import 'views/readonly_chat_view.dart';
 
 class MessagingModuleWidget extends StatefulWidget {
@@ -53,6 +54,11 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   bool _isLoadingMessages = false;
   bool _isSendingMessage = false;
 
+  // Detalhes de mensagens não lidas agrupadas por canal/subcanal/origem
+  List<dynamic> _unreadDetails = [];
+  StreamSubscription<Map<String, dynamic>>? _wsSubscription;
+  Timer? _unreadPollTimer;
+
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -63,6 +69,21 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     _fetchPilotSector();
     _fetchMessageChannels();
     _fetchContactsList();
+    _fetchUnreadDetails();
+
+    // Ouvinte em tempo real via WebSocket
+    _wsSubscription = NotificationWebSocketService.instance.eventStream.listen((event) {
+      final type = event['type']?.toString() ?? '';
+      final data = event['data'] as Map<String, dynamic>? ?? {};
+      _handleIncomingRealtimeMessage(type, data);
+    });
+
+    // Timer periódico de segurança (a cada 10s) para manter indicadores sincronizados
+    _unreadPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        _fetchUnreadDetails();
+      }
+    });
   }
 
   @override
@@ -509,10 +530,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  Future<void> _fetchMessages(int channelUid, int subchannelUid) async {
-    setState(() {
-      _isLoadingMessages = true;
-    });
+  Future<void> _fetchMessages(int channelUid, int subchannelUid, {bool isSilent = false}) async {
+    if (!isSilent) {
+      setState(() {
+        _isLoadingMessages = true;
+      });
+    }
 
     final accountUid = _getPilotUid();
     final int messageType = _activeTab == 'CONVERSAS' ? 0 : 1;
@@ -532,22 +555,44 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         // Marca as mensagens exibidas como lidas automaticamente
         _markCurrentMessagesAsRead(channelUid, subchannelUid, accountUid, messageType);
       } else {
+        if (!isSilent) {
+          setState(() {
+            _messagesList = [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar mensagens: $e');
+      if (!isSilent) {
         setState(() {
           _messagesList = [];
         });
       }
-    } catch (e) {
-      debugPrint('Erro ao carregar mensagens: $e');
-      setState(() {
-        _messagesList = [];
-      });
     } finally {
-      if (mounted) {
+      if (mounted && !isSilent) {
         setState(() {
           _isLoadingMessages = false;
         });
       }
     }
+  }
+
+  /// Limpa itens não lidos localmente no estado imediato da UI
+  void _clearLocalUnread(int messageType, int channelUid, int subchannelUid) {
+    _unreadDetails.removeWhere((item) {
+      final int itemType = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemCh = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int itemSub = int.tryParse(item['subchannel_uid']?.toString() ?? '') ?? 0;
+      final int itemOrigin = int.tryParse(item['origin_uid']?.toString() ?? '') ?? 0;
+
+      if (itemType != messageType) return false;
+      if (channelUid == 6 || itemType == 1) {
+        return (itemCh == 6 || itemType == 1) &&
+            (itemSub == subchannelUid || itemOrigin == subchannelUid);
+      } else {
+        return itemCh == channelUid && (itemSub == subchannelUid || subchannelUid == 0);
+      }
+    });
   }
 
   /// Marca mensagens recebidas como lidas na API e notifica a tela principal
@@ -559,19 +604,11 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   ) async {
     if (accountUid == 0) return;
 
-    // Verifica se há alguma mensagem recebida não lida na lista
-    final hasUnread = _messagesList.any((m) {
-      if (m is Map) {
-        final isRead = m['is_read'];
-        return isRead == 0 || isRead == '0' || isRead == false;
-      }
-      return false;
-    });
-
-    if (!hasUnread) {
-      // Notifica o pai para sincronizar os ícones do cabeçalho
-      widget.onMessagesRead?.call();
-      return;
+    // Remove localmente de imediato para resposta visual instantânea na UI
+    if (mounted) {
+      setState(() {
+        _clearLocalUnread(messageType, channelUid, subchannelUid);
+      });
     }
 
     try {
@@ -589,6 +626,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                 m['is_read'] = 1;
               }
             }
+            _clearLocalUnread(messageType, channelUid, subchannelUid);
           });
         }
         // Notifica o componente pai para atualizar os ícones de notificação
@@ -597,6 +635,182 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     } catch (e) {
       debugPrint('Erro ao marcar mensagens como lidas: $e');
     }
+  }
+
+  /// Busca o estado detalhado de mensagens não lidas
+  Future<void> _fetchUnreadDetails() async {
+    final pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${widget.apiBaseUrl}/api/messages/unread-status/$pilotUid'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _unreadDetails = data['unread_details'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar detalhes de não-lidas: $e');
+    }
+  }
+
+  /// Converte o nome textual do canal no UID correspondente
+  int _getChannelUidByName(String channelName) {
+    for (var ch in _channelsList) {
+      if ((ch['description'] ?? '').toString().toUpperCase() == channelName.toUpperCase()) {
+        final uid = ch['uid'];
+        if (uid is int) return uid;
+        return int.tryParse(uid.toString()) ?? 0;
+      }
+    }
+    final upper = channelName.toUpperCase();
+    switch (upper) {
+      case 'COALIZÃO':
+        return 1;
+      case 'SETOR':
+        return 2;
+      case 'CORPORAÇÃO':
+        return 3;
+      case 'EQUIPE':
+        return 4;
+      case 'ESQUADRILHA':
+        return 5;
+      case 'CONTATOS':
+        return 6;
+      case 'SUPORTE':
+        return 7;
+      default:
+        return 0;
+    }
+  }
+
+  /// Verifica se há mensagens não lidas para o canal especificado
+  bool _channelHasUnread(String channelName) {
+    final chUid = _getChannelUidByName(channelName);
+    if (chUid == 0) return false;
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemChUid = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 0 && itemChUid == chUid && count > 0;
+    });
+  }
+
+  /// Verifica se há mensagens não lidas para uma facção na Coalizão
+  bool _factionHasUnread(int factionUid) {
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemChUid = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int itemSubUid = int.tryParse(item['subchannel_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 0 && itemChUid == 1 && itemSubUid == factionUid && count > 0;
+    });
+  }
+
+  /// Verifica se há transmissões não lidas de um piloto específico em canal de broadcast
+  bool _pilotInBroadcastHasUnread(int channelUid, int pilotUid) {
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemChUid = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int itemOriginUid = int.tryParse(item['origin_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 0 && itemChUid == channelUid && itemOriginUid == pilotUid && count > 0;
+    });
+  }
+
+  /// Verifica se há mensagens não lidas no chat de contato (Conversas)
+  bool _contactChatHasUnread(int contactUid) {
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemChUid = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int itemSubUid = int.tryParse(item['subchannel_uid']?.toString() ?? '') ?? 0;
+      final int itemOriginUid = int.tryParse(item['origin_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 0 &&
+          itemChUid == 6 &&
+          (itemSubUid == contactUid || itemOriginUid == contactUid) &&
+          count > 0;
+    });
+  }
+
+  /// Verifica se há mensagens não lidas no canal de suporte
+  bool _supportHasUnread(int subchannelUid) {
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemChUid = int.tryParse(item['channel_uid']?.toString() ?? '') ?? 0;
+      final int itemSubUid = int.tryParse(item['subchannel_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 0 && itemChUid == 7 && itemSubUid == subchannelUid && count > 0;
+    });
+  }
+
+  /// Verifica se há e-mails não lidos de um contato (Mensagens)
+  bool _contactEmailHasUnread(int contactUid) {
+    return _unreadDetails.any((item) {
+      final int type = int.tryParse(item['type']?.toString() ?? '') ?? 0;
+      final int itemSubUid = int.tryParse(item['subchannel_uid']?.toString() ?? '') ?? 0;
+      final int itemOriginUid = int.tryParse(item['origin_uid']?.toString() ?? '') ?? 0;
+      final int count = int.tryParse(item['count']?.toString() ?? '') ?? 0;
+      return type == 1 &&
+          (itemSubUid == contactUid || itemOriginUid == contactUid) &&
+          count > 0;
+    });
+  }
+
+  /// Processa eventos recebidos em tempo real via WebSocket
+  void _handleIncomingRealtimeMessage(String eventType, Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final isChat = eventType == 'CHAT_NOTIFICATION' || eventType == 'chat';
+    final isEmail = eventType == 'EMAIL_NOTIFICATION' || eventType == 'email';
+
+    final int incomingChannelUid = int.tryParse(data['channel_uid']?.toString() ?? '') ?? 0;
+    final int incomingSubchannelUid = int.tryParse(data['subchannel_uid']?.toString() ?? '') ?? 0;
+    final int incomingSenderUid = int.tryParse(data['sender_uid']?.toString() ?? '') ?? 0;
+
+    bool isCurrentConversation = false;
+    int channelToFetch = incomingChannelUid;
+    int subchannelToFetch = incomingSubchannelUid;
+
+    if (_activeTab == 'CONVERSAS' && isChat) {
+      final int currentChUid = _getChannelUidByName(_selectedChannel);
+      channelToFetch = currentChUid;
+      if (currentChUid == incomingChannelUid) {
+        if (currentChUid == 1) {
+          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid);
+          subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
+        } else if (_isBroadcastChannel(_selectedChannel)) {
+          final currentGroupUid = _groupChannelUid ?? _currentSectorUid;
+          isCurrentConversation = (currentGroupUid == incomingSubchannelUid);
+          subchannelToFetch = currentGroupUid;
+        } else if (currentChUid == 6) {
+          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid ||
+              _selectedSubchannelUid == incomingSenderUid);
+          subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
+        } else if (currentChUid == 7) {
+          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid);
+          subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
+        }
+      }
+    } else if (_activeTab == 'MENSAGENS' && isEmail) {
+      channelToFetch = 6;
+      if (incomingChannelUid == 6 || incomingChannelUid == 0) {
+        isCurrentConversation = (_selectedContactUid == incomingSubchannelUid ||
+            _selectedContactUid == incomingSenderUid);
+        subchannelToFetch = _selectedContactUid ?? incomingSubchannelUid;
+      }
+    }
+
+    if (isCurrentConversation) {
+      _fetchMessages(channelToFetch, subchannelToFetch, isSilent: true);
+    }
+
+    _fetchUnreadDetails();
   }
 
   Future<void> _sendMessage() async {
@@ -705,6 +919,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   @override
   void dispose() {
+    _unreadPollTimer?.cancel();
+    _wsSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -718,6 +934,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
     // Notifica sincronização de ícones de notificação ao trocar de aba
     widget.onMessagesRead?.call();
+    _fetchUnreadDetails();
 
     if (tabName == 'MENSAGENS') {
       if (_selectedContactUid != null) {
@@ -974,26 +1191,31 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                     .toUpperCase();
 
                             final isSelected = contactId == _selectedContactUid;
+                            final int parsedContactId = contactId is int
+                                ? contactId
+                                : int.tryParse(contactId.toString()) ?? 0;
+                            final hasUnread = !isSelected && _contactEmailHasUnread(parsedContactId);
 
                             return _ContactListTile(
                               key: ValueKey('contact_tile_$contactId'),
-                              contactUid: contactId,
+                              contactUid: parsedContactId,
                               contactName: contactName,
                               isSelected: isSelected,
+                              hasUnread: hasUnread,
                               onTap: () {
                                 setState(() {
-                                  _selectedContactUid = contactId;
+                                  _selectedContactUid = parsedContactId;
                                 });
-                                _fetchMessages(6, contactId);
+                                _fetchMessages(6, parsedContactId);
                               },
                               onRemoveContact: () {
-                                _removeContact(contactId);
+                                _removeContact(parsedContactId);
                               },
                               onContextMenu: (position) {
                                 _showPilotContextMenu(
                                   context,
                                   position,
-                                  contactId,
+                                  parsedContactId,
                                   contactName,
                                   true,
                                 );
@@ -1010,6 +1232,30 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   Widget _buildChannelItem(String channelName) {
     final isSelected =
         _selectedChannel.toUpperCase() == channelName.toUpperCase();
+    final hasUnread = !isSelected && _channelHasUnread(channelName);
+
+    Color dotColor = Colors.transparent;
+    Color textColor = Colors.white;
+    FontWeight fontWeight = FontWeight.normal;
+    List<BoxShadow>? dotShadow;
+
+    if (isSelected) {
+      dotColor = _greenAccent;
+      textColor = _greenAccent;
+      fontWeight = FontWeight.bold;
+    } else if (hasUnread) {
+      dotColor = _cyanColor;
+      textColor = _cyanColor;
+      fontWeight = FontWeight.bold;
+      dotShadow = [
+        BoxShadow(
+          color: _cyanColor.withValues(alpha: 0.6),
+          blurRadius: 4,
+          spreadRadius: 1,
+        ),
+      ];
+    }
+
     return InkWell(
       onTap: () {
         setState(() {
@@ -1025,8 +1271,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               width: 6,
               height: 6,
               decoration: BoxDecoration(
-                color: isSelected ? _greenAccent : Colors.transparent,
+                color: dotColor,
                 shape: BoxShape.circle,
+                boxShadow: dotShadow,
               ),
             ),
             const SizedBox(width: 6),
@@ -1034,9 +1281,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
               child: Text(
                 channelName,
                 style: GoogleFonts.shareTechMono(
-                  color: isSelected ? _greenAccent : Colors.white,
+                  color: textColor,
                   fontSize: 11,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: fontWeight,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1122,11 +1369,16 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                               (c) => (c['pilot_uid'] ?? c['uid']) == pilotId,
                             );
 
+                            final int currentChUid = _getChannelUidByName(_selectedChannel);
+                            final bool pilotHasUnread =
+                                _pilotInBroadcastHasUnread(currentChUid, pilotId);
+
                             return _PilotListTile(
                               key: ValueKey('pilot_tile_$pilotId'),
                               pilotUid: pilotId,
                               pilotName: itemName,
                               isSelected: highlightSelected,
+                              hasUnread: pilotHasUnread,
                               isSelf: isSelf,
                               isAlreadyContact: isAlreadyContact,
                               canAddContact: !isSelf && !isAlreadyContact,
@@ -1145,6 +1397,43 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                             );
                           }
 
+                          final int rawSubUid = itemId is int
+                              ? itemId
+                              : int.tryParse(itemId?.toString() ?? '') ?? 0;
+
+                          bool subHasUnread = false;
+                          if (!isSelected) {
+                            if (chUpper == 'COALIZÃO') {
+                              subHasUnread = _factionHasUnread(rawSubUid);
+                            } else if (chUpper == 'CONTATOS') {
+                              subHasUnread = _contactChatHasUnread(rawSubUid);
+                            } else if (chUpper == 'SUPORTE') {
+                              subHasUnread = _supportHasUnread(rawSubUid);
+                            }
+                          }
+
+                          Color subDotColor = Colors.transparent;
+                          Color subTextColor = Colors.white;
+                          FontWeight subFontWeight = FontWeight.normal;
+                          List<BoxShadow>? subDotShadow;
+
+                          if (highlightSelected) {
+                            subDotColor = _greenAccent;
+                            subTextColor = _greenAccent;
+                            subFontWeight = FontWeight.bold;
+                          } else if (subHasUnread) {
+                            subDotColor = _cyanColor;
+                            subTextColor = _cyanColor;
+                            subFontWeight = FontWeight.bold;
+                            subDotShadow = [
+                              BoxShadow(
+                                color: _cyanColor.withValues(alpha: 0.6),
+                                blurRadius: 4,
+                                spreadRadius: 1,
+                              ),
+                            ];
+                          }
+
                           return GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
@@ -1158,7 +1447,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                 } else if (chUpper == 'COALIZÃO') {
                                   channelId = 1;
                                 }
-                                _fetchMessages(channelId, itemId);
+                                _fetchMessages(channelId, rawSubUid);
                               }
                             },
                             child: Padding(
@@ -1171,11 +1460,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                     width: 6,
                                     height: 6,
                                     decoration: BoxDecoration(
-                                      color:
-                                          highlightSelected
-                                              ? _greenAccent
-                                              : Colors.transparent,
+                                      color: subDotColor,
                                       shape: BoxShape.circle,
+                                      boxShadow: subDotShadow,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1183,15 +1470,9 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                                     child: Text(
                                       itemName,
                                       style: GoogleFonts.shareTechMono(
-                                        color:
-                                            highlightSelected
-                                                ? _greenAccent
-                                                : Colors.white,
+                                        color: subTextColor,
                                         fontSize: 11,
-                                        fontWeight:
-                                            highlightSelected
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
+                                        fontWeight: subFontWeight,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -1605,6 +1886,7 @@ class _PilotListTile extends StatefulWidget {
   final int pilotUid;
   final String pilotName;
   final bool isSelected;
+  final bool hasUnread;
   final bool isSelf;
   final bool isAlreadyContact;
   final bool canAddContact;
@@ -1616,6 +1898,7 @@ class _PilotListTile extends StatefulWidget {
     required this.pilotUid,
     required this.pilotName,
     required this.isSelected,
+    this.hasUnread = false,
     required this.isSelf,
     required this.isAlreadyContact,
     required this.canAddContact,
@@ -1634,8 +1917,31 @@ class _PilotListTileState extends State<_PilotListTile> {
   @override
   Widget build(BuildContext context) {
     const Color greenAccent = Color(0xFF00FF66);
+    const Color cyanAccent = Color(0xFF00D2FF);
     final bool showAddButton =
         widget.canAddContact && (_isHovered || _showMobileAction);
+
+    Color dotColor = Colors.transparent;
+    Color textColor = widget.isSelf ? Colors.white70 : Colors.white;
+    FontWeight fontWeight = FontWeight.normal;
+    List<BoxShadow>? dotShadow;
+
+    if (widget.isSelected) {
+      dotColor = greenAccent;
+      textColor = greenAccent;
+      fontWeight = FontWeight.bold;
+    } else if (widget.hasUnread) {
+      dotColor = cyanAccent;
+      textColor = cyanAccent;
+      fontWeight = FontWeight.bold;
+      dotShadow = [
+        BoxShadow(
+          color: cyanAccent.withValues(alpha: 0.6),
+          blurRadius: 4,
+          spreadRadius: 1,
+        ),
+      ];
+    }
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -1672,8 +1978,9 @@ class _PilotListTileState extends State<_PilotListTile> {
                 width: 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: widget.isSelected ? greenAccent : Colors.transparent,
+                  color: dotColor,
                   shape: BoxShape.circle,
+                  boxShadow: dotShadow,
                 ),
               ),
               const SizedBox(width: 6),
@@ -1684,17 +1991,9 @@ class _PilotListTileState extends State<_PilotListTile> {
                       child: Text(
                         widget.pilotName,
                         style: GoogleFonts.shareTechMono(
-                          color:
-                              widget.isSelected
-                                  ? greenAccent
-                                  : (widget.isSelf
-                                      ? Colors.white70
-                                      : Colors.white),
+                          color: textColor,
                           fontSize: 11,
-                          fontWeight:
-                              widget.isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                          fontWeight: fontWeight,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1773,6 +2072,7 @@ class _ContactListTile extends StatefulWidget {
   final int contactUid;
   final String contactName;
   final bool isSelected;
+  final bool hasUnread;
   final VoidCallback onTap;
   final VoidCallback onRemoveContact;
   final void Function(Offset position)? onContextMenu;
@@ -1782,6 +2082,7 @@ class _ContactListTile extends StatefulWidget {
     required this.contactUid,
     required this.contactName,
     required this.isSelected,
+    this.hasUnread = false,
     required this.onTap,
     required this.onRemoveContact,
     this.onContextMenu,
@@ -1799,7 +2100,30 @@ class _ContactListTileState extends State<_ContactListTile> {
   Widget build(BuildContext context) {
     const Color greenAccent = Color(0xFF00FF66);
     const Color yellowAccent = Color(0xFFFFD700);
+    const Color cyanAccent = Color(0xFF00D2FF);
     final bool showRemoveButton = _isHovered || _showMobileAction;
+
+    Color dotColor = Colors.transparent;
+    Color textColor = Colors.white;
+    FontWeight fontWeight = FontWeight.normal;
+    List<BoxShadow>? dotShadow;
+
+    if (widget.isSelected) {
+      dotColor = greenAccent;
+      textColor = greenAccent;
+      fontWeight = FontWeight.bold;
+    } else if (widget.hasUnread) {
+      dotColor = cyanAccent;
+      textColor = cyanAccent;
+      fontWeight = FontWeight.bold;
+      dotShadow = [
+        BoxShadow(
+          color: cyanAccent.withValues(alpha: 0.6),
+          blurRadius: 4,
+          spreadRadius: 1,
+        ),
+      ];
+    }
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -1835,8 +2159,9 @@ class _ContactListTileState extends State<_ContactListTile> {
                 width: 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: widget.isSelected ? greenAccent : Colors.transparent,
+                  color: dotColor,
                   shape: BoxShape.circle,
+                  boxShadow: dotShadow,
                 ),
               ),
               const SizedBox(width: 6),
@@ -1844,10 +2169,9 @@ class _ContactListTileState extends State<_ContactListTile> {
                 child: Text(
                   widget.contactName,
                   style: GoogleFonts.shareTechMono(
-                    color: widget.isSelected ? greenAccent : Colors.white,
+                    color: textColor,
                     fontSize: 11,
-                    fontWeight:
-                        widget.isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: fontWeight,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

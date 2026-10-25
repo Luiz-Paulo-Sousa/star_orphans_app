@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -16,6 +17,13 @@ class NotificationWebSocketService {
 
   bool _isInitialized = false;
   Function(String eventType, Map<String, dynamic> data)? onMessageReceived;
+
+  // Stream broadcast para permitir múltiplos ouvintes reativos de eventos WebSocket
+  final StreamController<Map<String, dynamic>> _eventStreamController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get eventStream =>
+      _eventStreamController.stream;
 
   // Inicializa o sistema de notificações locais
   Future<void> initialize() async {
@@ -104,6 +112,12 @@ class NotificationWebSocketService {
               // Dispara notificação nativa visual e sonora
               _showNativeNotification(type, data);
             }
+
+            // Emite para ouvintes reativos através da Stream
+            _eventStreamController.add({
+              'type': type,
+              'data': data,
+            });
 
             // Repassa para a UI atualizar os ícones (🗨️ / 📧)
             if (onMessageReceived != null) {
