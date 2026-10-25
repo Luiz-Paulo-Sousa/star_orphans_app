@@ -242,6 +242,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bool isKeyboardOpen = bottomInset > 60;
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final bool hideBottomBar = isKeyboardOpen && isMobile;
+
     return Scaffold(
       backgroundColor: _darkBg,
       body: SafeArea(
@@ -252,7 +257,9 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
             Expanded(
               child: _buildSelectedTabContent(),
             ),
-            _buildBottomNavigationBar(),
+            hideBottomBar
+                ? const SizedBox.shrink()
+                : _buildBottomNavigationBar(),
           ],
         ),
       ),
