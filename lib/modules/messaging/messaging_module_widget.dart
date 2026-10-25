@@ -116,6 +116,15 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted && _scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
@@ -782,18 +791,22 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       channelToFetch = currentChUid;
       if (currentChUid == incomingChannelUid) {
         if (currentChUid == 1) {
-          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid);
+          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid || incomingSubchannelUid == 0);
           subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
         } else if (_isBroadcastChannel(_selectedChannel)) {
-          final currentGroupUid = _groupChannelUid ?? _currentSectorUid;
-          isCurrentConversation = (currentGroupUid == incomingSubchannelUid);
-          subchannelToFetch = currentGroupUid;
+          // Em canais de grupo (Setor, Corporação, Equipe, Esquadrilha),
+          // se o canal aberto na tela for o canal da mensagem, trata-se da conversa ativa
+          isCurrentConversation = true;
+          subchannelToFetch = _groupChannelUid ??
+              (currentChUid == 2
+                  ? _currentSectorUid
+                  : (incomingSubchannelUid != 0 ? incomingSubchannelUid : 1));
         } else if (currentChUid == 6) {
           isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid ||
               _selectedSubchannelUid == incomingSenderUid);
           subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
         } else if (currentChUid == 7) {
-          isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid);
+          isCurrentConversation = true;
           subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
         }
       }
@@ -807,7 +820,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
 
     if (isCurrentConversation) {
+      debugPrint('[REALTIME CHAT] Transmissao recebida para a conversa ativa (Canal: $channelToFetch, Subcanal: $subchannelToFetch). Atualizando...');
       _fetchMessages(channelToFetch, subchannelToFetch, isSilent: true);
+    } else {
+      debugPrint('[REALTIME CHAT] Transmissao recebida em segundo plano. Atualizando indicadores...');
     }
 
     _fetchUnreadDetails();
