@@ -1003,28 +1003,27 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     final bool canShowInput =
         _activeTab != 'CONVERSAS' || isBroadcast || _subchannelsList.isNotEmpty;
 
-    final formattedMessages =
-        _messagesList.map((m) {
+    final List<Map<String, dynamic>> formattedMessages =
+        _messagesList.map<Map<String, dynamic>>((m) {
           final senderName =
-              m['sender_account'] ?? m['sender_name'] ?? 'SISTEMA';
+              (m['sender_account'] ?? m['sender_name'] ?? 'SISTEMA').toString();
 
           final opData = widget.profileData?['operator'] ?? {};
-          final myAccount = opData['name'] ?? '';
+          final myAccount = (opData['name'] ?? '').toString();
 
           final isMe =
-              senderName.toString().toUpperCase() ==
-              myAccount.toString().toUpperCase();
+              senderName.toUpperCase() == myAccount.toUpperCase();
 
-          String rawDate = m['date_time'] ?? '';
+          String rawDate = (m['date_time'] ?? '').toString();
           if (rawDate.length > 19) {
             rawDate = rawDate.substring(0, 19).replaceAll('T', ' ');
           }
 
-          return {
+          return <String, dynamic>{
             'timestamp': rawDate,
             'sender': senderName,
             'isMe': isMe,
-            'text': m['text'] ?? '',
+            'text': (m['text'] ?? '').toString(),
           };
         }).toList();
 
@@ -1084,31 +1083,18 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        height: isTypingOnMobile ? 0 : 120,
-                        curve: Curves.easeInOut,
-                        clipBehavior: Clip.hardEdge,
-                        child: OverflowBox(
-                          minHeight: 120,
-                          maxHeight: 120,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width:
-                                _activeTab != 'CONVERSAS'
-                                    ? _leftPanelWidth
-                                    : double.infinity,
-                            height: 120,
-                            child: leftPanelsWidget,
-                          ),
+                      if (!isTypingOnMobile) ...[
+                        SizedBox(
+                          width:
+                              _activeTab != 'CONVERSAS'
+                                  ? _leftPanelWidth
+                                  : double.infinity,
+                          height: 120,
+                          child: leftPanelsWidget,
                         ),
-                      ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        height: isTypingOnMobile ? 0 : 8,
-                      ),
+                        const SizedBox(height: 8),
+                      ],
                       Expanded(
-                        key: const ValueKey('mobile_main_chat_expanded'),
                         child: mainChatContent,
                       ),
                     ],
