@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'player_profile_screen.dart';
 import 'modules/messaging/messaging_module_widget.dart';
+import 'modules/hangar/hangar_module_widget.dart';
 import 'services/notification_websocket_service.dart';
 
 class MainLayoutScreen extends StatefulWidget {
@@ -470,7 +471,10 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           onMessagesRead: _checkUnreadMessagesOnStartup,
         );
       case 2:
-        return _buildPlaceholderScreen('HANGAR DE NAVES E MÓDULOS');
+        return HangarModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+        );
       case 3:
         return _buildPlaceholderScreen('QUADRO DE CONTRATOS E MISSÕES');
       case 4:
