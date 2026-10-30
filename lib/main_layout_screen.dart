@@ -31,6 +31,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   bool _hasUnreadChat = false;
   bool _hasUnreadEmail = false;
   bool _isUploadingAvatar = false;
+  late int _avatarCacheBuster;
   Timer? _unreadSyncTimer;
 
   late Map<String, dynamic> _currentProfileData;
@@ -43,6 +44,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   void initState() {
     super.initState();
     _currentProfileData = Map<String, dynamic>.from(widget.profileData);
+    _avatarCacheBuster = DateTime.now().millisecondsSinceEpoch;
     _initRealtimeConnection();
     _checkUnreadMessagesOnStartup();
     // Heartbeat a cada 10 segundos para manter os ícones de notificação 100% sincronizados
@@ -101,10 +103,15 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                 : <String, dynamic>{};
 
         if (mounted) {
-          setState(() {
-            _hasUnreadChat = data['has_unread_chat'] == true;
-            _hasUnreadEmail = data['has_unread_email'] == true;
-          });
+          final bool newUnreadChat = data['has_unread_chat'] == true;
+          final bool newUnreadEmail = data['has_unread_email'] == true;
+          if (_hasUnreadChat != newUnreadChat ||
+              _hasUnreadEmail != newUnreadEmail) {
+            setState(() {
+              _hasUnreadChat = newUnreadChat;
+              _hasUnreadEmail = newUnreadEmail;
+            });
+          }
           debugPrint('=== [DEBUG GLOBAL] Estados finais -> Chat: $_hasUnreadChat | Email: $_hasUnreadEmail ===');
         }
       }
@@ -143,6 +150,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         if (jsonResponse['status'] == 'sucesso') {
           setState(() {
             _currentProfileData = jsonResponse['data'];
+            _avatarCacheBuster = DateTime.now().millisecondsSinceEpoch;
           });
         }
       }
@@ -275,12 +283,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     final String creditsStr = _formatCredits(op['credits']);
 
     final String? avatarUrl = op['avatar_url'];
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
     final String fullAvatarUrl =
         (avatarUrl != null && avatarUrl.isNotEmpty)
             ? (avatarUrl.startsWith('http')
-                ? '$avatarUrl?t=$timestamp'
-                : '${widget.apiBaseUrl}$avatarUrl?t=$timestamp')
+                ? '$avatarUrl?t=$_avatarCacheBuster'
+                : '${widget.apiBaseUrl}$avatarUrl?t=$_avatarCacheBuster')
             : '';
 
     return Container(
