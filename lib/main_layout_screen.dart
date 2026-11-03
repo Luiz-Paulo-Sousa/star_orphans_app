@@ -540,14 +540,14 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
-    final tabs = [
-      'PERFIL',
-      'MENSAGENS',
-      'HANGAR',
-      'CONTRATOS',
-      'MERCADO',
-      'ESTOQUE',
-      'FÁBRICA',
+    final List<Map<String, dynamic>> tabs = [
+      {'label': 'PERFIL', 'icon': Icons.badge_outlined},
+      {'label': 'MENSAGENS', 'icon': Icons.forum_outlined},
+      {'label': 'HANGAR', 'icon': Icons.rocket_launch_outlined},
+      {'label': 'CONTRATOS', 'icon': Icons.assignment_outlined},
+      {'label': 'MERCADO', 'icon': Icons.candlestick_chart_outlined},
+      {'label': 'ESTOQUE', 'icon': Icons.inventory_2_outlined},
+      {'label': 'FÁBRICA', 'icon': Icons.precision_manufacturing_outlined},
     ];
 
     return Container(
@@ -558,6 +558,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: List.generate(tabs.length, (index) {
           final isSelected = index == _selectedIndex;
+          final tab = tabs[index];
           return Expanded(
             child: InkWell(
               onTap: () {
@@ -579,13 +580,13 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.square,
-                      size: 10,
-                      color: isSelected ? Colors.greenAccent : Colors.white,
+                      tab['icon'] as IconData,
+                      size: 16,
+                      color: isSelected ? Colors.greenAccent : _cyanColor,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
-                      tabs[index],
+                      tab['label'] as String,
                       style: GoogleFonts.shareTechMono(
                         color: isSelected ? Colors.greenAccent : Colors.white,
                         fontSize: 9,
