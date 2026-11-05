@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class HangarModuleWidget extends StatefulWidget {
   final Map<String, dynamic>? profileData;
@@ -38,97 +40,215 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
   // Item selecionado no catálogo para comparação
   int _selectedCatalogItemIndex = 1;
 
-  // Mock fiel da Frota de naves
-  final List<Map<String, dynamic>> _fleet = [
-    {
-      'id': 'v0',
-      'name': 'NX-77 VESPERA',
-      'registry': 'Registro #101 · item NX77',
-      'integrity': 94.2,
-      'status': 'ATIVA',
-      'hold': '38 / 60 T',
-      'color': _cyanColor,
-      'subsystems': [
-        {'name': 'Integridade do Casco', 'val': 96.0, 'status': 'NOMINAL'},
-        {'name': 'Motores de Empuxo', 'val': 102.5, 'status': 'SOBRECARGA'},
-        {'name': 'Sensores Orbitais', 'val': 78.4, 'status': 'ATENÇÃO'},
-        {'name': 'Suporte de Vida', 'val': 100.0, 'status': 'NOMINAL'},
-        {'name': 'Amortecedores Inerciais', 'val': 94.1, 'status': 'NOMINAL'},
-      ],
-      'stats': {
-        'dps': 790,
-        'energyUsed': 127,
-        'energyMax': 650,
-        'mass': 18.5,
-      },
-    },
-    {
-      'id': 'v1',
-      'name': 'KR-12 CORVO NEGRO',
-      'registry': 'Registro #102 · item KR12',
-      'integrity': 76.5,
-      'status': 'ATRACADA',
-      'hold': '20 / 45 T',
-      'color': _amberAccent,
-      'subsystems': [
-        {'name': 'Integridade do Casco', 'val': 76.5, 'status': 'ATENÇÃO'},
-        {'name': 'Motores de Empuxo', 'val': 85.0, 'status': 'NOMINAL'},
-        {'name': 'Sensores Orbitais', 'val': 92.0, 'status': 'NOMINAL'},
-        {'name': 'Suporte de Vida', 'val': 88.0, 'status': 'NOMINAL'},
-        {'name': 'Amortecedores Inerciais', 'val': 70.0, 'status': 'ATENÇÃO'},
-      ],
-      'stats': {
-        'dps': 540,
-        'energyUsed': 95,
-        'energyMax': 500,
-        'mass': 14.2,
-      },
-    },
-    {
-      'id': 'v2',
-      'name': 'HX-03 HALCYON',
-      'registry': 'Registro #103 · item HX03',
-      'integrity': 104.0,
-      'status': 'ATRACADA',
-      'hold': '55 / 120 T',
-      'color': _greenAccent,
-      'subsystems': [
-        {'name': 'Integridade do Casco', 'val': 100.0, 'status': 'NOMINAL'},
-        {'name': 'Motores de Empuxo', 'val': 104.0, 'status': 'SOBRECARGA'},
-        {'name': 'Sensores Orbitais', 'val': 100.0, 'status': 'NOMINAL'},
-        {'name': 'Suporte de Vida', 'val': 100.0, 'status': 'NOMINAL'},
-        {'name': 'Amortecedores Inerciais', 'val': 102.0, 'status': 'SOBRECARGA'},
-      ],
-      'stats': {
-        'dps': 1120,
-        'energyUsed': 310,
-        'energyMax': 850,
-        'mass': 42.0,
-      },
-    },
-    {
-      'id': 'v3',
-      'name': 'LT-9 MARIPOSA',
-      'registry': 'Registro #104 · item LT09',
-      'integrity': 88.0,
-      'status': 'ATRACADA',
-      'hold': '12 / 30 T',
-      'color': _cyanColor,
-      'subsystems': [
-        {'name': 'Integridade do Casco', 'val': 88.0, 'status': 'NOMINAL'},
-        {'name': 'Motores de Empuxo', 'val': 95.0, 'status': 'NOMINAL'},
-        {'name': 'Sensores Orbitais', 'val': 82.0, 'status': 'NOMINAL'},
-        {'name': 'Suporte de Vida', 'val': 90.0, 'status': 'NOMINAL'},
-        {'name': 'Amortecedores Inerciais', 'val': 85.0, 'status': 'NOMINAL'},
-      ],
-      'stats': {
-        'dps': 320,
-        'energyUsed': 60,
-        'energyMax': 400,
-        'mass': 9.8,
-      },
-    },
-  ];
+  bool _isLoadingFleet = true;
+  bool _isActivatingVessel = false;
+  String? _fleetErrorMessage;
+
+  // Lista de naves carregada da API (ou fallback inicial enquanto carrega)
+  List<Map<String, dynamic>> _fleet = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFleetFromApi();
+  }
+
+  int _getPilotUid() {
+    final profile = widget.profileData ?? {};
+    final operatorData = profile['operator'] ?? {};
+    final dynamic rawUid =
+        operatorData['account_id'] ??
+        operatorData['operator_uid'] ??
+        operatorData['pilot_uid'] ??
+        operatorData['uid'] ??
+        profile['account_id'] ??
+        profile['uid'];
+    if (rawUid != null) {
+      if (rawUid is int) return rawUid;
+      return int.tryParse(rawUid.toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  Color _colorForIntegrity(double val, bool isSelected) {
+    if (val < 70) return _amberAccent;
+    if (isSelected) return _greenAccent;
+    return _cyanColor;
+  }
+
+  Future<void> _fetchFleetFromApi() async {
+    final int pilotUid = _getPilotUid();
+    if (pilotUid == 0) {
+      setState(() {
+        _isLoadingFleet = false;
+        _fleetErrorMessage = 'ID do piloto não identificado.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoadingFleet = true;
+      _fleetErrorMessage = null;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/fleet/$pilotUid');
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'sucesso' && decoded['data'] != null) {
+          final List rawVessels = decoded['data']['vessels'] ?? [];
+          final List<Map<String, dynamic>> loaded =
+              rawVessels.map<Map<String, dynamic>>((v) {
+                final double avgInt = (v['integrity'] as num?)?.toDouble() ?? 100.0;
+                final bool isSel = v['selected'] == true;
+                final int cap = (v['cargo_capacity'] as num?)?.toInt() ?? 0;
+                final List rawSubs = v['subsystems'] ?? [];
+
+                return {
+                  'id': 'v${v['vessel_uid']}',
+                  'vessel_uid': v['vessel_uid'],
+                  'item_code': v['item_code'],
+                  'name': v['name'] ?? 'NAVE DESCONHECIDA',
+                  'registry': v['registry'] ?? 'Registro #${v['vessel_uid']}',
+                  'integrity': avgInt,
+                  'hull_integrity': (v['hull_integrity'] as num?)?.toDouble() ?? avgInt,
+                  'selected': isSel,
+                  'is_at_current_station': v['is_at_current_station'] == true,
+                  'status': v['status'] ?? (isSel ? 'ATIVA' : 'ATRACADA'),
+                  'location_label': v['location_label'] ?? '',
+                  'hold': '$cap V',
+                  'hologram_url': v['hologram_url'],
+                  'color': _colorForIntegrity(avgInt, isSel),
+                  'subsystems':
+                      rawSubs
+                          .map<Map<String, dynamic>>(
+                            (s) => {
+                              'name': s['name'].toString(),
+                              'val': (s['val'] as num).toDouble(),
+                              'status': s['status'].toString(),
+                            },
+                          )
+                          .toList(),
+                  'stats': {
+                    'dps': 790,
+                    'energyUsed': 127,
+                    'energyMax': 650,
+                    'mass': (cap / 50.0).clamp(5.0, 500.0),
+                  },
+                };
+              }).toList();
+
+          if (mounted) {
+            setState(() {
+              _fleet = loaded;
+              _isLoadingFleet = false;
+              // Seleciona inicialmente a nave ativa (selected == true) ou a primeira da estação atual
+              final int activeIdx = _fleet.indexWhere((s) => s['selected'] == true);
+              if (activeIdx >= 0) {
+                _selectedShipIndex = activeIdx;
+              } else {
+                final int stationIdx = _fleet.indexWhere(
+                  (s) => s['is_at_current_station'] == true,
+                );
+                _selectedShipIndex = stationIdx >= 0 ? stationIdx : 0;
+              }
+            });
+          }
+          return;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _isLoadingFleet = false;
+          _fleetErrorMessage = 'Erro ao carregar frota (${response.statusCode}).';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingFleet = false;
+          _fleetErrorMessage = 'Falha de conexão com o servidor do Hangar.';
+        });
+      }
+    }
+  }
+
+  Future<void> _activateVessel(Map<String, dynamic> ship) async {
+    if (_isActivatingVessel) return;
+    final bool isAtStation = ship['is_at_current_station'] == true;
+    if (!isAtStation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: _amberAccent,
+          content: Text(
+            'ESTA NAVE ESTÁ EM OUTRA ESTAÇÃO! Viaje até lá para ativá-la.',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final int pilotUid = _getPilotUid();
+    final dynamic vesselUid = ship['vessel_uid'];
+    if (pilotUid == 0 || vesselUid == null) return;
+
+    setState(() {
+      _isActivatingVessel = true;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/select-vessel');
+      final response = await http.put(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pilot_uid': pilotUid,
+          'vessel_uid': vesselUid,
+        }),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        await _fetchFleetFromApi();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              'NAVE ${ship['name']} ATIVADA COM SUCESSO!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      } else {
+        final decoded = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(decoded['mensagem'] ?? 'Falha ao ativar nave.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Erro ao ativar nave: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isActivatingVessel = false;
+        });
+      }
+    }
+  }
 
   // Hardpoints equipados na nave ativa (mock)
   final Map<String, List<Map<String, dynamic>>> _hardpoints = {
@@ -257,6 +377,82 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingFleet) {
+      return Container(
+        color: const Color(0xFF0A0D12),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  color: _cyanColor,
+                  strokeWidth: 2.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'SINCRONIZANDO HANGAR...',
+                style: GoogleFonts.shareTechMono(
+                  color: _cyanColor,
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_fleet.isEmpty) {
+      return Container(
+        color: const Color(0xFF0A0D12),
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _panelBg,
+              border: Border.all(color: _cyanColor.withValues(alpha: 0.6)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.rocket_launch_outlined, color: _cyanColor, size: 32),
+                const SizedBox(height: 10),
+                Text(
+                  _fleetErrorMessage ?? 'NENHUMA NAVE REGISTRADA PARA ESTE OPERADOR.',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: _fetchFleetFromApi,
+                  icon: const Icon(Icons.refresh, color: Colors.black, size: 15),
+                  label: Text(
+                    'TENTAR NOVAMENTE',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.black,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: _cyanColor),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final bool isDesktop = constraints.maxWidth >= 950;
@@ -385,7 +581,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
               _buildShipCarouselSelector(),
               const SizedBox(height: 10),
               Container(
-                height: 220,
+                height: 260,
                 decoration: BoxDecoration(
                   color: _panelBg,
                   border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
@@ -457,9 +653,11 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
               itemBuilder: (context, index) {
                 final ship = _fleet[index];
                 final bool isSelected = _selectedShipIndex == index;
-                final bool isActive = ship['status'] == 'ATIVA';
+                final bool isActive = ship['selected'] == true;
+                final bool isAtStation = ship['is_at_current_station'] == true;
                 final Color shipColor = ship['color'] as Color;
                 final double integrity = (ship['integrity'] as num).toDouble();
+                final String locationStr = (ship['location_label'] ?? '').toString();
 
                 return InkWell(
                   onTap: () {
@@ -493,29 +691,68 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                         Row(
                           children: [
                             Icon(
-                              Icons.navigation,
+                              isAtStation ? Icons.rocket_launch : Icons.lock_outline,
                               size: 14,
-                              color: shipColor,
+                              color: isAtStation ? shipColor : _amberAccent,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
-                                ship['name'],
-                                style: GoogleFonts.shareTechMono(
-                                  color: isSelected ? Colors.white : Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    ship['name'],
+                                    style: GoogleFonts.shareTechMono(
+                                      color: isSelected ? Colors.white : Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (locationStr.isNotEmpty)
+                                    Text(
+                                      locationStr,
+                                      style: GoogleFonts.shareTechMono(
+                                        color: isAtStation ? Colors.white54 : _amberAccent,
+                                        fontSize: 9,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
                               ),
                             ),
+                            if (!isActive && isAtStation)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6.0),
+                                child: InkWell(
+                                  onTap: () => _activateVessel(ship),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: _cyanColor.withValues(alpha: 0.2),
+                                      border: Border.all(color: _cyanColor, width: 0.9),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                    child: Text(
+                                      'ATIVAR',
+                                      style: GoogleFonts.shareTechMono(
+                                        color: _cyanColor,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                               decoration: BoxDecoration(
                                 color: isActive
                                     ? _greenAccent.withValues(alpha: 0.15)
-                                    : Colors.white10,
+                                    : (isAtStation ? Colors.white10 : _amberAccent.withValues(alpha: 0.15)),
                                 border: Border.all(
-                                  color: isActive ? _greenAccent : Colors.white24,
+                                  color: isActive
+                                      ? _greenAccent
+                                      : (isAtStation ? Colors.white24 : _amberAccent),
                                   width: 0.8,
                                 ),
                                 borderRadius: BorderRadius.circular(2),
@@ -523,7 +760,9 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                               child: Text(
                                 ship['status'],
                                 style: GoogleFonts.shareTechMono(
-                                  color: isActive ? _greenAccent : Colors.white54,
+                                  color: isActive
+                                      ? _greenAccent
+                                      : (isAtStation ? Colors.white54 : _amberAccent),
                                   fontSize: 9,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -569,10 +808,37 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
   }
 
   // =========================================================================
-  // CARROSSEL DE SELEÇÃO RÁPIDA DE NAVE
+  // CARROSSEL DE SELEÇÃO RÁPIDA DE NAVE (Filtra naves na mesma estação)
   // =========================================================================
+  void _cycleStationShip(int delta) {
+    final List<int> stationIndices = [];
+    for (int i = 0; i < _fleet.length; i++) {
+      if (_fleet[i]['is_at_current_station'] == true) {
+        stationIndices.add(i);
+      }
+    }
+    if (stationIndices.isEmpty) {
+      setState(() {
+        _selectedShipIndex =
+            (_selectedShipIndex + delta + _fleet.length) % _fleet.length;
+      });
+      return;
+    }
+    final int currentPos = stationIndices.indexOf(_selectedShipIndex);
+    final int nextPos =
+        currentPos >= 0
+            ? (currentPos + delta + stationIndices.length) % stationIndices.length
+            : 0;
+    setState(() {
+      _selectedShipIndex = stationIndices[nextPos];
+    });
+  }
+
   Widget _buildShipCarouselSelector() {
     final currentShip = _fleet[_selectedShipIndex];
+    final bool isActive = currentShip['selected'] == true;
+    final bool isAtStation = currentShip['is_at_current_station'] == true;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
@@ -587,26 +853,85 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
             icon: const Icon(Icons.arrow_left, color: _cyanColor),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            onPressed: () {
-              setState(() {
-                _selectedShipIndex =
-                    (_selectedShipIndex - 1 + _fleet.length) % _fleet.length;
-              });
-            },
+            onPressed: () => _cycleStationShip(-1),
           ),
           Expanded(
             child: Column(
               children: [
-                Text(
-                  currentShip['name'],
-                  style: GoogleFonts.shareTechMono(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
-                  ),
-                  textAlign: TextAlign.center,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        currentShip['name'],
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.1,
+                        ),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    if (isActive)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: _greenAccent.withValues(alpha: 0.18),
+                          border: Border.all(color: _greenAccent, width: 0.8),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Text(
+                          'ATIVA',
+                          style: GoogleFonts.shareTechMono(
+                            color: _greenAccent,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    else if (isAtStation)
+                      InkWell(
+                        onTap: _isActivatingVessel ? null : () => _activateVessel(currentShip),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: _cyanColor.withValues(alpha: 0.2),
+                            border: Border.all(color: _cyanColor, width: 0.8),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _isActivatingVessel ? '...' : 'ATIVAR NAVE',
+                            style: GoogleFonts.shareTechMono(
+                              color: _cyanColor,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: _amberAccent.withValues(alpha: 0.18),
+                          border: Border.all(color: _amberAccent, width: 0.8),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Text(
+                          'OUTRA ESTAÇÃO',
+                          style: GoogleFonts.shareTechMono(
+                            color: _amberAccent,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
+                const SizedBox(height: 2),
                 Text(
                   currentShip['registry'],
                   style: GoogleFonts.shareTechMono(
@@ -622,12 +947,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
             icon: const Icon(Icons.arrow_right, color: _cyanColor),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            onPressed: () {
-              setState(() {
-                _selectedShipIndex =
-                    (_selectedShipIndex + 1) % _fleet.length;
-              });
-            },
+            onPressed: () => _cycleStationShip(1),
           ),
         ],
       ),
@@ -740,24 +1060,60 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
   }
 
   Widget _buildHologramViewport() {
+    final currentShip = _fleet[_selectedShipIndex];
+    final String? rawHoloUrl = currentShip['hologram_url']?.toString();
+    final String fullHoloUrl =
+        (rawHoloUrl != null && rawHoloUrl.isNotEmpty)
+            ? (rawHoloUrl.startsWith('http')
+                ? rawHoloUrl
+                : '${widget.apiBaseUrl}$rawHoloUrl')
+            : '';
+
     return Center(
-      child: AspectRatio(
-        aspectRatio: 600 / 260,
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              colors: [
-                _cyanColor.withValues(alpha: 0.10),
-                Colors.transparent,
-              ],
-              radius: 0.8,
-            ),
-          ),
-          child: CustomPaint(
-            painter: _ShipHologramPainter(),
+      child: Container(
+        margin: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            colors: [
+              _cyanColor.withValues(alpha: 0.10),
+              Colors.transparent,
+            ],
+            radius: 0.85,
           ),
         ),
+        child:
+            fullHoloUrl.isNotEmpty
+                ? Image.network(
+                  fullHoloUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: _cyanColor,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) {
+                    return AspectRatio(
+                      aspectRatio: 600 / 260,
+                      child: CustomPaint(
+                        painter: _ShipHologramPainter(),
+                      ),
+                    );
+                  },
+                )
+                : AspectRatio(
+                  aspectRatio: 600 / 260,
+                  child: CustomPaint(
+                    painter: _ShipHologramPainter(),
+                  ),
+                ),
       ),
     );
   }
