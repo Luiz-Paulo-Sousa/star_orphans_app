@@ -29,7 +29,18 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
   static const Color _panelBg = Color(0xD912161F);
   static const Color _cardBg = Color(0xFF151922);
 
-  int _selectedSubTab = 0; // 0 = RECEITAS, 1 = FILA DE PRODUÇÃO
+  // Categorias idênticas à interface do Mercado com larguras flex
+  static const List<Map<String, dynamic>> _categories = [
+    {'type': 6, 'label': 'NAVES', 'flex': 8},
+    {'type': 1, 'label': 'INSUMOS', 'flex': 10},
+    {'type': 2, 'label': 'ARMAS', 'flex': 8},
+    {'type': 3, 'label': 'MÍSSEIS', 'flex': 10},
+    {'type': 4, 'label': 'DISPOSITIVOS', 'flex': 14},
+    {'type': 5, 'label': 'UTILITÁRIOS', 'flex': 14},
+  ];
+
+  int _selectedSubTab = 0; // 0 = PROJETOS, 1 = FILA DE PRODUÇÃO
+  int _selectedItemType = 1; // Categoria padrão (Insumos/Matéria-prima)
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -44,7 +55,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
   void initState() {
     super.initState();
     _loadFactoryData();
-    // Atualiza a cada 1 segundo para a contagem regressiva da fila
+    // Atualização a cada 1s para o timer regressivo da fila
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _queue.isNotEmpty) {
         setState(() {
@@ -92,11 +103,8 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     });
 
     try {
-      // 1. Busca Info da Estação e Hangar
       final infoRes = await http.get(Uri.parse('${widget.apiBaseUrl}/api/factory/info/$pilotUid'));
-      // 2. Busca Receitas
       final recipesRes = await http.get(Uri.parse('${widget.apiBaseUrl}/api/factory/recipes/$pilotUid'));
-      // 3. Busca Fila de Produção
       final queueRes = await http.get(Uri.parse('${widget.apiBaseUrl}/api/factory/queue/$pilotUid'));
 
       if (infoRes.statusCode == 200 && recipesRes.statusCode == 200 && queueRes.statusCode == 200) {
@@ -104,11 +112,24 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
         final recipesData = jsonDecode(recipesRes.body);
         final queueData = jsonDecode(queueRes.body);
 
+        final loadedRecipes = List<Map<String, dynamic>>.from(recipesData['recipes'] ?? []);
+        final stationType = infoData?['pilot']?['station_type']?.toString().toLowerCase() ?? 'fabrica';
+
         setState(() {
           _stationInfo = infoData;
-          _recipes = List<Map<String, dynamic>>.from(recipesData['recipes'] ?? []);
+          _recipes = loadedRecipes;
           _queue = List<Map<String, dynamic>>.from(queueData['queue'] ?? []);
           _isLoading = false;
+
+          // Se for fundição, seleciona automaticamente INSUMOS; se fábrica, se não tiver itens da categoria atual, busca a primeira com itens
+          if (stationType == 'fundicao') {
+            _selectedItemType = 1;
+          } else {
+            final hasCurrent = loadedRecipes.any((r) => r['item_type'] == _selectedItemType);
+            if (!hasCurrent && loadedRecipes.isNotEmpty) {
+              _selectedItemType = loadedRecipes.first['item_type'] ?? 1;
+            }
+          }
         });
       } else {
         setState(() {
@@ -150,14 +171,14 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
           SnackBar(
             backgroundColor: const Color(0xFF152A1E),
             content: Text(
-              'ORDEM INICIADA COM SUCESSO!',
+              'PRODUÇÃO INICIADA COM SUCESSO!',
               style: GoogleFonts.shareTechMono(color: _greenAccent, fontWeight: FontWeight.bold),
             ),
           ),
         );
         widget.onProfileRefresh?.call();
         await _loadFactoryData();
-        setState(() => _selectedSubTab = 1); // Alterna para a visualização da fila
+        setState(() => _selectedSubTab = 1);
       } else {
         _showErrorDialog(data['mensagem'] ?? 'Erro ao iniciar fabricação.');
       }
@@ -218,11 +239,11 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
         ),
         title: Text(
           '// AVISO DO SISTEMA',
-          style: GoogleFonts.shareTechMono(color: _redAccent, fontWeight: FontWeight.bold, fontSize: 14),
+          style: GoogleFonts.shareTechMono(color: _redAccent, fontWeight: FontWeight.bold, fontSize: 13),
         ),
         content: Text(
           msg,
-          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
+          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
         ),
         actions: [
           TextButton(
@@ -253,22 +274,22 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     if (_errorMessage != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(20.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.warning_amber_rounded, color: _redAccent, size: 48),
-              const SizedBox(height: 12),
+              const Icon(Icons.warning_amber_rounded, color: _redAccent, size: 40),
+              const SizedBox(height: 10),
               Text(
                 _errorMessage!,
-                style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
+                style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               ElevatedButton.icon(
                 onPressed: _loadFactoryData,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text('TENTAR NOVAMENTE', style: GoogleFonts.shareTechMono()),
+                icon: const Icon(Icons.refresh, size: 15),
+                label: Text('TENTAR NOVAMENTE', style: GoogleFonts.shareTechMono(fontSize: 11)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cardBg,
                   foregroundColor: _cyanColor,
@@ -293,10 +314,13 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
           // 1. Barra de Informação da Instação (Estação)
           _buildFacilityHeader(pilot, hangar, isFoundry),
 
-          // 2. Abas de Navegação (Receitas vs Fila)
+          // 2. Abas de Navegação (Projetos vs Fila)
           _buildSubTabBar(),
 
-          // 3. Conteúdo da Sub-Aba Selecionada
+          // 3. Barra de Categorias / Filtros (exibida quando na aba Projetos)
+          if (_selectedSubTab == 0) _buildCategoryFilterBar(),
+
+          // 4. Conteúdo Selecionado
           Expanded(
             child: _selectedSubTab == 0
                 ? _buildRecipesView(isFoundry)
@@ -313,15 +337,16 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     final usedVol = hangar['current_volume'] ?? 0;
     final maxVol = hangar['max_volume'] ?? 50000;
 
-    final typeLabel = isFoundry ? 'FUNDIÇÃO INDUSTRIAL' : 'FÁBRICA DE MANUFATURA';
+    // Label simplificado: FÁBRICA ou FUNDIÇÃO
+    final typeLabel = isFoundry ? 'FUNDIÇÃO' : 'FÁBRICA';
     final typeColor = isFoundry ? _amberAccent : _cyanColor;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: _panelBg,
         border: Border(
-          bottom: BorderSide(color: _cyanColor.withValues(alpha: 0.3), width: 1),
+          bottom: BorderSide(color: _cyanColor.withValues(alpha: 0.25), width: 1),
         ),
       ),
       child: Row(
@@ -336,9 +361,9 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                     Icon(
                       isFoundry ? Icons.local_fire_department : Icons.precision_manufacturing,
                       color: typeColor,
-                      size: 16,
+                      size: 14,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Text(
                       typeLabel,
                       style: GoogleFonts.shareTechMono(
@@ -350,12 +375,12 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   stationName.toString().toUpperCase(),
                   style: GoogleFonts.shareTechMono(
                     color: Colors.white,
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -374,9 +399,10 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
+              // Palavra ESTOQUE no lugar de HANGAR
               Text(
-                'HANGAR: $usedVol / $maxVol m³',
+                'ESTOQUE: $usedVol / $maxVol m³',
                 style: GoogleFonts.shareTechMono(
                   color: Colors.white70,
                   fontSize: 10,
@@ -394,18 +420,19 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
 
     return Container(
       color: _darkBg,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
           Expanded(
             child: _buildSubTabButton(
-              label: 'RECEITAS DISPONÍVEIS',
-              icon: Icons.menu_book_outlined,
+              // Nome alterado de RECEITAS para PROJETOS
+              label: 'PROJETOS DISPONÍVEIS',
+              icon: Icons.architecture,
               isSelected: _selectedSubTab == 0,
               onTap: () => setState(() => _selectedSubTab = 0),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: _buildSubTabButton(
               label: inProgressCount > 0 ? 'FILA ATIVA ($inProgressCount)' : 'FILA DE PRODUÇÃO',
@@ -430,7 +457,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: isSelected ? _panelBg : _cardBg.withValues(alpha: 0.5),
           border: Border.all(
@@ -442,13 +469,13 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 14, color: isSelected ? _cyanColor : Colors.white60),
-            const SizedBox(width: 6),
+            Icon(icon, size: 13, color: isSelected ? _cyanColor : Colors.white60),
+            const SizedBox(width: 5),
             Text(
               label,
               style: GoogleFonts.shareTechMono(
                 color: isSelected ? _cyanColor : Colors.white70,
-                fontSize: 11,
+                fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
@@ -458,16 +485,76 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     );
   }
 
+  // Barra de filtros de grupos idêntica à interface do Mercado
+  Widget _buildCategoryFilterBar() {
+    return Container(
+      color: _darkBg,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Row(
+        children: _categories.map((cat) {
+          final int typeCode = cat['type'] as int;
+          final String label = cat['label'] as String;
+          final int flexWeight = (cat['flex'] as int?) ?? 10;
+          final bool isSelected = _selectedItemType == typeCode;
+
+          return Expanded(
+            flex: flexWeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedItemType = typeCode;
+                  });
+                },
+                borderRadius: BorderRadius.circular(3),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: isSelected ? _greenAccent : _panelBg,
+                    border: Border.all(
+                      color: isSelected ? _greenAccent : _cyanColor,
+                      width: isSelected ? 1.6 : 1.0,
+                    ),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      style: GoogleFonts.shareTechMono(
+                        color: isSelected ? Colors.black : Colors.white,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildRecipesView(bool isFoundry) {
-    if (_recipes.isEmpty) {
+    // Filtra pelo tipo de item selecionado
+    final filtered = _recipes.where((r) => (r['item_type'] as int? ?? 1) == _selectedItemType).toList();
+
+    if (filtered.isEmpty) {
+      final currentCategory = _categories.firstWhere(
+        (c) => c['type'] == _selectedItemType,
+        orElse: () => {'label': 'CATEGORIA'},
+      )['label'];
+
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Text(
-            isFoundry
-                ? '// NENHUMA RECEITA DE FUNDIÇÃO DISPONÍVEL NESTA ESTAÇÃO.'
-                : '// NENHUMA RECEITA DE MANUFATURA DISPONÍVEL NESTA ESTAÇÃO.',
-            style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 12),
+            '// NENHUM PROJETO DE $currentCategory DISPONÍVEL NESTA ESTAÇÃO.',
+            style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
             textAlign: TextAlign.center,
           ),
         ),
@@ -475,15 +562,16 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: _recipes.length,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      itemCount: filtered.length,
       itemBuilder: (context, index) {
-        final recipe = _recipes[index];
+        final recipe = filtered[index];
         return _buildRecipeCard(recipe);
       },
     );
   }
 
+  // Card do item com tamanho reduzido e botão no canto superior direito
   Widget _buildRecipeCard(Map<String, dynamic> recipe) {
     final name = recipe['name'] ?? 'Item';
     final timeSec = recipe['craft_time'] ?? 60;
@@ -493,21 +581,21 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     final ingredients = List<Map<String, dynamic>>.from(recipe['ingredients'] ?? []);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 7),
       decoration: BoxDecoration(
         color: _cardBg,
         border: Border.all(
-          color: canCraft ? _cyanColor.withValues(alpha: 0.5) : Colors.white12,
+          color: canCraft ? _greenAccent.withValues(alpha: 0.4) : Colors.white12,
           width: 1,
         ),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(3),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Linha do Título e Dados Básicos
+            // Linha Superior: Nome do Item + Botão de Fabricar (posicionado no topo, 20% menor)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -516,119 +604,109 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                     name.toString().toUpperCase(),
                     style: GoogleFonts.shareTechMono(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
+                      letterSpacing: 0.8,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _panelBg,
-                    border: Border.all(color: canCraft ? _greenAccent : _redAccent, width: 0.8),
-                    borderRadius: BorderRadius.circular(2),
+                const SizedBox(width: 8),
+                // Botão de Iniciar Fabricação reposicionado e reduzido em 20%
+                ElevatedButton.icon(
+                  onPressed: (canCraft && !_isSubmitting)
+                      ? () => _startCrafting(itemCode, 1)
+                      : null,
+                  icon: const Icon(Icons.play_arrow_rounded, size: 13),
+                  label: Text(
+                    _isSubmitting ? 'AGUARDE' : 'FABRICAR',
+                    style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 9.5),
                   ),
-                  child: Text(
-                    canCraft ? 'PRONTO' : 'SEM RECURSOS',
-                    style: GoogleFonts.shareTechMono(
-                      color: canCraft ? _greenAccent : _redAccent,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: canCraft ? const Color(0xFF152A1E) : Colors.white.withValues(alpha: 0.05),
+                    foregroundColor: canCraft ? _greenAccent : Colors.white24,
+                    side: BorderSide(
+                      color: canCraft ? _greenAccent : Colors.white12,
+                      width: 1,
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: const Size(0, 26),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+                    elevation: 0,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 3),
             // Linha com tempo e custo
             Row(
               children: [
-                const Icon(Icons.timer_outlined, size: 12, color: Colors.white60),
-                const SizedBox(width: 4),
+                const Icon(Icons.timer_outlined, size: 11, color: Colors.white60),
+                const SizedBox(width: 3),
                 Text(
                   _formatSeconds(timeSec),
-                  style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11),
+                  style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10.5),
                 ),
-                const SizedBox(width: 16),
-                const Icon(Icons.monetization_on_outlined, size: 12, color: _greenAccent),
-                const SizedBox(width: 4),
+                const SizedBox(width: 14),
+                const Icon(Icons.monetization_on_outlined, size: 11, color: _greenAccent),
+                const SizedBox(width: 3),
                 Text(
                   '$cost CR',
-                  style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 11),
+                  style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10.5),
                 ),
               ],
             ),
-            const Divider(color: Colors.white12, height: 16),
-            // Seção de Insumos / Ingredientes
-            Text(
-              '// RECURSOS EXIGIDOS NO HANGAR:',
-              style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: ingredients.map((ing) {
-                final ingName = ing['name'] ?? 'Insumo';
-                final reqAmt = ing['required_amount'] ?? 1;
-                final availAmt = ing['available_amount'] ?? 0;
-                final sufficient = ing['sufficient'] == true;
+            const Divider(color: Colors.white10, height: 10),
+            // Seção de Insumos (Recursos exigidos no estoque)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'ESTOQUE: ',
+                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
+                ),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: ingredients.map((ing) {
+                      final ingName = ing['name'] ?? 'Insumo';
+                      final reqAmt = ing['required_amount'] ?? 1;
+                      final availAmt = ing['available_amount'] ?? 0;
+                      final sufficient = ing['sufficient'] == true;
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _panelBg,
-                    border: Border.all(
-                      color: sufficient ? _greenAccent.withValues(alpha: 0.4) : _redAccent.withValues(alpha: 0.4),
-                      width: 0.8,
-                    ),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$ingName: ',
-                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11),
-                      ),
-                      Text(
-                        '$availAmt/$reqAmt',
-                        style: GoogleFonts.shareTechMono(
-                          color: sufficient ? _greenAccent : _redAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _panelBg,
+                          border: Border.all(
+                            color: sufficient ? _greenAccent.withValues(alpha: 0.35) : _redAccent.withValues(alpha: 0.35),
+                            width: 0.7,
+                          ),
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      ),
-                    ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$ingName: ',
+                              style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                            ),
+                            Text(
+                              '$availAmt/$reqAmt',
+                              style: GoogleFonts.shareTechMono(
+                                color: sufficient ? _greenAccent : _redAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            // Botão de Ação
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: (canCraft && !_isSubmitting)
-                    ? () => _startCrafting(itemCode, 1)
-                    : null,
-                icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                label: Text(
-                  _isSubmitting ? 'PROCESSANDO...' : 'INICIAR FABRICAÇÃO',
-                  style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 11),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: canCraft ? const Color(0xFF152A1E) : Colors.transparent,
-                  foregroundColor: canCraft ? _greenAccent : Colors.white24,
-                  side: BorderSide(
-                    color: canCraft ? _greenAccent : Colors.white12,
-                    width: 1,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                ),
-              ),
+              ],
             ),
           ],
         ),
@@ -644,11 +722,11 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.inbox_outlined, size: 36, color: Colors.white24),
-              const SizedBox(height: 8),
+              const Icon(Icons.inbox_outlined, size: 32, color: Colors.white24),
+              const SizedBox(height: 6),
               Text(
                 '// NENHUMA ORDEM DE FABRICAÇÃO NA FILA',
-                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
               ),
             ],
           ),
@@ -657,7 +735,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       itemCount: _queue.length,
       itemBuilder: (context, index) {
         final item = _queue[index];
@@ -689,12 +767,12 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: _cardBg,
-        border: Border.all(color: statusColor.withValues(alpha: 0.5), width: 1),
-        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: statusColor.withValues(alpha: 0.4), width: 1),
+        borderRadius: BorderRadius.circular(3),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,11 +785,11 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                 style: GoogleFonts.shareTechMono(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
                   color: _panelBg,
                   border: Border.all(color: statusColor, width: 0.8),
@@ -721,29 +799,29 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                   statusLabel,
                   style: GoogleFonts.shareTechMono(
                     color: statusColor,
-                    fontSize: 9,
+                    fontSize: 8.5,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'LOCAL: ${stationName.toString().toUpperCase()}',
-            style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 11),
+            style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 10),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (isInProgress && remainingSec > 0) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(2),
               child: const LinearProgressIndicator(
                 backgroundColor: Colors.white12,
                 color: _cyanColor,
-                minHeight: 4,
+                minHeight: 3.5,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -752,22 +830,26 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
                   style: GoogleFonts.shareTechMono(
                     color: _cyanColor,
                     fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                    fontSize: 11,
                   ),
                 ),
                 TextButton(
                   onPressed: _isSubmitting ? null : () => _cancelCrafting(queueUid),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    minimumSize: const Size(0, 24),
+                  ),
                   child: Text(
                     'CANCELAR',
-                    style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11),
+                    style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 10),
                   ),
                 ),
               ],
             ),
           ] else if (isCompleted || remainingSec <= 0) ...[
             Text(
-              '✓ Item concluído e entregue no hangar desta estação.',
-              style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 11),
+              '✓ Item concluído e entregue no estoque desta estação.',
+              style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10),
             ),
           ],
         ],
