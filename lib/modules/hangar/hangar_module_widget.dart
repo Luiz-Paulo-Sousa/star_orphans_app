@@ -6,11 +6,13 @@ import 'dart:convert';
 class HangarModuleWidget extends StatefulWidget {
   final Map<String, dynamic>? profileData;
   final String apiBaseUrl;
+  final VoidCallback? onProfileRefresh;
 
   const HangarModuleWidget({
     super.key,
     this.profileData,
     this.apiBaseUrl = 'http://26.239.180.177:8020',
+    this.onProfileRefresh,
   });
 
   @override
@@ -38,14 +40,32 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
   String _selectedSlotId = 'can:0';
 
   // Item selecionado no catálogo para comparação
-  int _selectedCatalogItemIndex = 1;
+  int _selectedCatalogItemIndex = 0;
 
   bool _isLoadingFleet = true;
   bool _isActivatingVessel = false;
+  bool _isRepairingVessel = false;
+  bool _isEquippingLoadout = false;
   String? _fleetErrorMessage;
+  StateSetter? _dialogSetState;
+  int? _apiPilotCredits;
 
-  // Lista de naves carregada da API (ou fallback inicial enquanto carrega)
+  // Lista de naves carregada da API
   List<Map<String, dynamic>> _fleet = [];
+
+  // Catálogo consolidado de itens disponíveis (Estoque + Mercado)
+  Map<String, List<Map<String, dynamic>>> _catalog = {
+    'CANHÕES': [],
+    'MÍSSEIS': [],
+    'DISPOSITIVOS': [],
+    'UTILITÁRIOS': [],
+  };
+
+  void _updateState(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+    _dialogSetState?.call(() {});
+  }
 
   @override
   void initState() {
@@ -70,41 +90,122 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
     return 0;
   }
 
+  int _getPilotCredits() {
+    if (_apiPilotCredits != null) return _apiPilotCredits!;
+    final profile = widget.profileData ?? {};
+    final dynamic rawCredits =
+        profile['credits'] ??
+        (profile['wallet'] is Map ? profile['wallet']['credits'] : null) ??
+        (profile['operator'] is Map ? profile['operator']['credits'] : null);
+    if (rawCredits != null) {
+      if (rawCredits is num) return rawCredits.toInt();
+      final cleaned = rawCredits.toString().replaceAll(RegExp(r'[^0-9]'), '');
+      return int.tryParse(cleaned) ?? 0;
+    }
+    return 0;
+  }
+
   Color _colorForIntegrity(double val, bool isSelected) {
     if (val < 70) return _amberAccent;
     if (isSelected) return _greenAccent;
     return _cyanColor;
   }
 
-  Future<void> _fetchFleetFromApi() async {
+  Map<String, List<Map<String, dynamic>>> _getCurrentShipHardpoints() {
+    if (_fleet.isEmpty) {
+      return {
+        'CANHÕES': [],
+        'MÍSSEIS': [],
+        'DISPOSITIVOS': [],
+        'UTILITÁRIOS': [],
+      };
+    }
+    final ship = _fleet[_selectedShipIndex.clamp(0, _fleet.length - 1)];
+    final rawHp = ship['hardpoints'];
+    if (rawHp is Map<String, List<Map<String, dynamic>>>) {
+      return rawHp;
+    }
+    return {
+      'CANHÕES': [],
+      'MÍSSEIS': [],
+      'DISPOSITIVOS': [],
+      'UTILITÁRIOS': [],
+    };
+  }
+
+  Future<void> _fetchFleetFromApi({bool preserveSelection = false}) async {
     final int pilotUid = _getPilotUid();
     if (pilotUid == 0) {
-      setState(() {
+      _updateState(() {
         _isLoadingFleet = false;
         _fleetErrorMessage = 'ID do piloto não identificado.';
       });
       return;
     }
 
-    setState(() {
-      _isLoadingFleet = true;
-      _fleetErrorMessage = null;
-    });
+    final dynamic previousVesselUid =
+        (preserveSelection && _fleet.isNotEmpty && _selectedShipIndex < _fleet.length)
+            ? _fleet[_selectedShipIndex]['vessel_uid']
+            : null;
+
+    if (!preserveSelection) {
+      _updateState(() {
+        _isLoadingFleet = true;
+        _fleetErrorMessage = null;
+      });
+    }
 
     try {
       final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/fleet/$pilotUid');
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded['status'] == 'sucesso' && decoded['data'] != null) {
+          final int? fetchedCredits =
+              (decoded['data']['pilot']?['credits'] as num?)?.toInt();
           final List rawVessels = decoded['data']['vessels'] ?? [];
+          final Map<String, dynamic> rawCatalog =
+              (decoded['data']['catalog'] as Map<String, dynamic>?) ?? {};
+
+          final Map<String, List<Map<String, dynamic>>> parsedCatalog = {
+            'CANHÕES': [],
+            'MÍSSEIS': [],
+            'DISPOSITIVOS': [],
+            'UTILITÁRIOS': [],
+          };
+          for (final catKey in parsedCatalog.keys) {
+            final List rawList = (rawCatalog[catKey] as List?) ?? [];
+            parsedCatalog[catKey] =
+                rawList
+                    .map<Map<String, dynamic>>((item) => Map<String, dynamic>.from(item as Map))
+                    .toList();
+          }
+
           final List<Map<String, dynamic>> loaded =
               rawVessels.map<Map<String, dynamic>>((v) {
                 final double avgInt = (v['integrity'] as num?)?.toDouble() ?? 100.0;
                 final bool isSel = v['selected'] == true;
                 final int cap = (v['cargo_capacity'] as num?)?.toInt() ?? 0;
                 final List rawSubs = v['subsystems'] ?? [];
+                final Map<String, dynamic> rawStats =
+                    (v['stats'] as Map<String, dynamic>?) ?? {};
+                final Map<String, dynamic> rawHp =
+                    (v['hardpoints'] as Map<String, dynamic>?) ?? {};
+
+                final Map<String, List<Map<String, dynamic>>> parsedHp = {
+                  'CANHÕES': [],
+                  'MÍSSEIS': [],
+                  'DISPOSITIVOS': [],
+                  'UTILITÁRIOS': [],
+                };
+                for (final catKey in parsedHp.keys) {
+                  final List rawSlots = (rawHp[catKey] as List?) ?? [];
+                  parsedHp[catKey] =
+                      rawSlots
+                          .map<Map<String, dynamic>>((s) => Map<String, dynamic>.from(s as Map))
+                          .toList();
+                }
 
                 return {
                   'id': 'v${v['vessel_uid']}',
@@ -114,6 +215,11 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                   'registry': v['registry'] ?? 'Registro #${v['vessel_uid']}',
                   'integrity': avgInt,
                   'hull_integrity': (v['hull_integrity'] as num?)?.toDouble() ?? avgInt,
+                  'base_price': (v['base_price'] as num?)?.toInt() ?? 250000,
+                  'damage_percent':
+                      (v['damage_percent'] as num?)?.toDouble() ??
+                      (100.0 - avgInt).clamp(0.0, 100.0),
+                  'repair_cost': (v['repair_cost'] as num?)?.toInt() ?? 0,
                   'selected': isSel,
                   'is_at_current_station': v['is_at_current_station'] == true,
                   'status': v['status'] ?? (isSel ? 'ATIVA' : 'ATRACADA'),
@@ -125,34 +231,53 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                       rawSubs
                           .map<Map<String, dynamic>>(
                             (s) => {
+                              'key': (s['key'] ?? '').toString(),
                               'name': s['name'].toString(),
+                              'repair_cost': (s['repair_cost'] as num?)?.toInt() ?? 0,
                               'val': (s['val'] as num).toDouble(),
                               'status': s['status'].toString(),
                             },
                           )
                           .toList(),
+                  'hardpoints': parsedHp,
                   'stats': {
-                    'dps': 790,
-                    'energyUsed': 127,
-                    'energyMax': 650,
-                    'mass': (cap / 50.0).clamp(5.0, 500.0),
+                    'dps': (rawStats['dps'] as num?)?.toInt() ?? 0,
+                    'energyUsed': (rawStats['energyUsed'] as num?)?.toInt() ?? 0,
+                    'energyMax': (rawStats['energyMax'] as num?)?.toInt() ?? 650,
+                    'mass': (rawStats['mass'] as num?)?.toDouble() ?? (cap / 50.0).clamp(5.0, 500.0),
                   },
                 };
               }).toList();
 
           if (mounted) {
-            setState(() {
+            _updateState(() {
+              if (fetchedCredits != null) {
+                _apiPilotCredits = fetchedCredits;
+              }
               _fleet = loaded;
+              _catalog = parsedCatalog;
               _isLoadingFleet = false;
-              // Seleciona inicialmente a nave ativa (selected == true) ou a primeira da estação atual
-              final int activeIdx = _fleet.indexWhere((s) => s['selected'] == true);
-              if (activeIdx >= 0) {
-                _selectedShipIndex = activeIdx;
-              } else {
-                final int stationIdx = _fleet.indexWhere(
-                  (s) => s['is_at_current_station'] == true,
+              if (preserveSelection && previousVesselUid != null) {
+                final int prevIdx = _fleet.indexWhere(
+                  (s) => s['vessel_uid'] == previousVesselUid,
                 );
-                _selectedShipIndex = stationIdx >= 0 ? stationIdx : 0;
+                if (prevIdx >= 0) {
+                  _selectedShipIndex = prevIdx;
+                }
+              } else {
+                final int activeIdx = _fleet.indexWhere((s) => s['selected'] == true);
+                if (activeIdx >= 0) {
+                  _selectedShipIndex = activeIdx;
+                } else {
+                  final int stationIdx = _fleet.indexWhere(
+                    (s) => s['is_at_current_station'] == true,
+                  );
+                  _selectedShipIndex = stationIdx >= 0 ? stationIdx : 0;
+                }
+              }
+              final catItems = _catalog[_selectedLoadoutCategory] ?? [];
+              if (_selectedCatalogItemIndex >= catItems.length) {
+                _selectedCatalogItemIndex = 0;
               }
             });
           }
@@ -160,14 +285,14 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
         }
       }
       if (mounted) {
-        setState(() {
+        _updateState(() {
           _isLoadingFleet = false;
           _fleetErrorMessage = 'Erro ao carregar frota (${response.statusCode}).';
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
+        _updateState(() {
           _isLoadingFleet = false;
           _fleetErrorMessage = 'Falha de conexão com o servidor do Hangar.';
         });
@@ -195,7 +320,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
     final dynamic vesselUid = ship['vessel_uid'];
     if (pilotUid == 0 || vesselUid == null) return;
 
-    setState(() {
+    _updateState(() {
       _isActivatingVessel = true;
     });
 
@@ -213,7 +338,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        await _fetchFleetFromApi();
+        await _fetchFleetFromApi(preserveSelection: true);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -225,7 +350,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
           ),
         );
       } else {
-        final decoded = jsonDecode(response.body);
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: _redAccent,
@@ -243,137 +368,192 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
       );
     } finally {
       if (mounted) {
-        setState(() {
+        _updateState(() {
           _isActivatingVessel = false;
         });
       }
     }
   }
 
-  // Hardpoints equipados na nave ativa (mock)
-  final Map<String, List<Map<String, dynamic>>> _hardpoints = {
-    'CANHÕES': [
-      {'id': 'can:0', 'name': 'Pulsar MK-I', 'dps': 180, 'energy': 42, 'range': 1200, 'free': false},
-      {'id': 'can:1', 'name': 'Autocanhão Vespa', 'dps': 150, 'energy': 30, 'range': 800, 'free': false},
-      {'id': 'can:2', 'name': '+ SLOT LIVRE', 'free': true},
-    ],
-    'MÍSSEIS': [
-      {'id': 'mis:0', 'name': 'Víbora', 'qty': 8, 'dps': 220, 'energy': 18, 'range': 3500, 'free': false},
-      {'id': 'mis:1', 'name': 'Enxame', 'qty': 12, 'dps': 310, 'energy': 24, 'range': 2800, 'free': false},
-    ],
-    'DISPOSITIVOS': [
-      {'id': 'dev:0', 'name': 'Escudo Égide', 'energy': 85, 'free': false},
-      {'id': 'dev:1', 'name': 'Overclock Ω', 'energy': 110, 'free': false},
-      {'id': 'dev:2', 'name': '+ SLOT LIVRE', 'free': true},
-    ],
-    'UTILITÁRIOS': [
-      {'id': 'uti:0', 'name': 'Nanitas', 'qty': 5, 'free': false},
-      {'id': 'uti:1', 'name': 'Chaff', 'qty': 20, 'free': false},
-      {'id': 'uti:2', 'name': 'Célula', 'qty': 4, 'free': false},
-      {'id': 'uti:3', 'name': '+ SLOT LIVRE', 'free': true},
-      {'id': 'uti:4', 'name': '+ SLOT LIVRE', 'free': true},
-    ],
-  };
+  int _resolveTargetDbSlotForCategory(String category) {
+    final hp = _getCurrentShipHardpoints();
+    final slots = hp[category] ?? [];
+    if (slots.isEmpty) {
+      if (category == 'MÍSSEIS') return 100;
+      if (category == 'DISPOSITIVOS') return 200;
+      if (category == 'UTILITÁRIOS') return 300;
+      return 0;
+    }
+    // Se o slot atualmente selecionado pertence a esta categoria, usa ele!
+    final selectedInCat = slots.where((s) => s['id'] == _selectedSlotId).toList();
+    if (selectedInCat.isNotEmpty) {
+      return (selectedInCat.first['db_slot'] as num?)?.toInt() ?? 0;
+    }
+    // Caso contrário, prioriza o primeiro slot livre da categoria, ou o primeiro slot da categoria
+    final freeSlot = slots.where((s) => s['free'] == true).toList();
+    if (freeSlot.isNotEmpty) {
+      _selectedSlotId = freeSlot.first['id'].toString();
+      return (freeSlot.first['db_slot'] as num?)?.toInt() ?? 0;
+    }
+    _selectedSlotId = slots.first['id'].toString();
+    return (slots.first['db_slot'] as num?)?.toInt() ?? 0;
+  }
 
-  // Catálogo de itens disponíveis (mock)
-  final Map<String, List<Map<String, dynamic>>> _catalog = {
-    'CANHÕES': [
-      {
-        'name': 'Canhão Pulsar MK-I',
-        'dps': 180,
-        'energy': 42,
-        'range': 1200,
-        'stock': 3,
-        'inStock': true,
-      },
-      {
-        'name': 'Canhão de Plasma MK-II',
-        'dps': 265,
-        'energy': 68,
-        'range': 950,
-        'stock': 1,
-        'inStock': true,
-      },
-      {
-        'name': 'Railgun Lança',
-        'dps': 410,
-        'energy': 120,
-        'range': 2600,
-        'stock': 0,
-        'inStock': false,
-      },
-      {
-        'name': 'Autocanhão Vespa',
-        'dps': 150,
-        'energy': 30,
-        'range': 800,
-        'stock': 5,
-        'inStock': true,
-      },
-    ],
-    'MÍSSEIS': [
-      {
-        'name': 'Míssil Víbora',
-        'dps': 220,
-        'energy': 18,
-        'range': 3500,
-        'stock': 8,
-        'inStock': true,
-      },
-      {
-        'name': 'Míssil Enxame',
-        'dps': 310,
-        'energy': 24,
-        'range': 2800,
-        'stock': 12,
-        'inStock': true,
-      },
-      {
-        'name': 'Torpedo Caelum',
-        'dps': 600,
-        'energy': 45,
-        'range': 1800,
-        'stock': 0,
-        'inStock': false,
-      },
-    ],
-    'DISPOSITIVOS': [
-      {
-        'name': 'Escudo Égide MK-II',
-        'dps': 0,
-        'energy': 85,
-        'range': 0,
-        'stock': 1,
-        'inStock': true,
-      },
-      {
-        'name': 'Overclock Ω Tático',
-        'dps': 50,
-        'energy': 110,
-        'range': 0,
-        'stock': 2,
-        'inStock': true,
-      },
-    ],
-    'UTILITÁRIOS': [
-      {
-        'name': 'Nanitas de Reparo Rápido',
-        'dps': 0,
-        'energy': 15,
-        'range': 0,
-        'stock': 5,
-        'inStock': true,
-      },
-      {
-        'name': 'Chaff Contramedida',
-        'dps': 0,
-        'energy': 5,
-        'range': 0,
-        'stock': 20,
-        'inStock': true,
-      },
-    ],
-  };
+  Future<void> _equipCatalogItem(Map<String, dynamic> item) async {
+    if (_isEquippingLoadout || _fleet.isEmpty) return;
+    final currentShip = _fleet[_selectedShipIndex];
+    if (currentShip['is_at_current_station'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: _amberAccent,
+          content: Text(
+            'Apenas naves atracadas na estação atual podem ter seu Loadout modificado.',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final int pilotUid = _getPilotUid();
+    final dynamic vesselUid = currentShip['vessel_uid'];
+    final int targetDbSlot = _resolveTargetDbSlotForCategory(_selectedLoadoutCategory);
+    final bool inStock = item['inStock'] == true;
+
+    _updateState(() {
+      _isEquippingLoadout = true;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/equip-slot');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pilot_uid': pilotUid,
+          'vessel_uid': vesselUid,
+          'db_slot': targetDbSlot,
+          'item_code': item['item_code'],
+          'buy_if_missing': !inStock,
+        }),
+      );
+
+      if (!mounted) return;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      if (response.statusCode == 200 && decoded['status'] == 'sucesso') {
+        widget.onProfileRefresh?.call();
+        await _fetchFleetFromApi(preserveSelection: true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Item equipado com sucesso!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(decoded['mensagem'] ?? 'Falha ao equipar item.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Erro de conexão ao equipar item: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _updateState(() {
+          _isEquippingLoadout = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _unequipHardpointSlot(Map<String, dynamic> slot) async {
+    if (_isEquippingLoadout || _fleet.isEmpty) return;
+    final currentShip = _fleet[_selectedShipIndex];
+    if (currentShip['is_at_current_station'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: _amberAccent,
+          content: Text(
+            'Apenas naves atracadas na estação atual podem ter seu Loadout modificado.',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final int pilotUid = _getPilotUid();
+    final dynamic vesselUid = currentShip['vessel_uid'];
+    final int dbSlot = (slot['db_slot'] as num?)?.toInt() ?? 0;
+
+    _updateState(() {
+      _isEquippingLoadout = true;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/unequip-slot');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pilot_uid': pilotUid,
+          'vessel_uid': vesselUid,
+          'db_slot': dbSlot,
+        }),
+      );
+
+      if (!mounted) return;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      if (response.statusCode == 200 && decoded['status'] == 'sucesso') {
+        await _fetchFleetFromApi(preserveSelection: true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _cyanColor,
+            content: Text(
+              decoded['mensagem'] ?? 'Item removido para o depósito!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(decoded['mensagem'] ?? 'Falha ao desequipar slot.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Erro de conexão ao desequipar slot: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _updateState(() {
+          _isEquippingLoadout = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1237,6 +1417,8 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
           ),
 
           const SizedBox(height: 16),
+          _buildRepairSection(currentShip),
+          const SizedBox(height: 10),
           // Botão principal de ação
           ElevatedButton(
             onPressed: () {
@@ -1268,6 +1450,386 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
     );
   }
 
+  String _formatCredits(dynamic value) {
+    if (value == null) return '0';
+    final int parsed =
+        (value is num) ? value.round() : int.tryParse(value.toString()) ?? 0;
+    return parsed.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
+
+  Widget _buildRepairSection(Map<String, dynamic> ship) {
+    final bool isAtStation = ship['is_at_current_station'] == true;
+    final int basePrice = (ship['base_price'] as num?)?.toInt() ?? 250000;
+    final double damagePercent = (ship['damage_percent'] as num?)?.toDouble() ?? 0.0;
+    final int repairCost = (ship['repair_cost'] as num?)?.toInt() ?? 0;
+    final int pilotCredits = _getPilotCredits();
+    final bool needsRepair = damagePercent > 0.0 && repairCost > 0;
+    final bool canAffordTotal = pilotCredits >= repairCost;
+    final bool insufficientFunds = isAtStation && needsRepair && !canAffordTotal;
+    final bool canRepair =
+        isAtStation && needsRepair && canAffordTotal && !_isRepairingVessel;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        border: Border.all(
+          color: needsRepair
+              ? _amberAccent.withValues(alpha: 0.65)
+              : _greenAccent.withValues(alpha: 0.45),
+          width: 1.0,
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'VALOR BASE: ${_formatCredits(basePrice)} CR',
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
+              ),
+              Text(
+                needsRepair
+                    ? 'AVARIA: ${damagePercent.toStringAsFixed(1)}%'
+                    : '100% OPERACIONAL',
+                style: GoogleFonts.shareTechMono(
+                  color: needsRepair ? _amberAccent : _greenAccent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: canRepair ? () => _showRepairDialog(ship) : null,
+            icon: Icon(
+              needsRepair ? Icons.build_rounded : Icons.verified_outlined,
+              color: canRepair ? Colors.black : Colors.white38,
+              size: 15,
+            ),
+            label: (_isRepairingVessel || !isAtStation || !needsRepair)
+                ? Text(
+                    _isRepairingVessel
+                        ? 'REPARANDO SUBSISTEMAS...'
+                        : (!isAtStation
+                            ? 'REPARO INDISPONÍVEL (OUTRA ESTAÇÃO)'
+                            : 'SUBSISTEMAS 100% REPARADOS'),
+                    style: GoogleFonts.shareTechMono(
+                      color: canRepair ? Colors.black : Colors.white38,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                    ),
+                  )
+                : RichText(
+                    text: TextSpan(
+                      style: GoogleFonts.shareTechMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: 'REPARAR SUBSISTEMAS ',
+                          style: TextStyle(
+                            color: canRepair ? Colors.black : Colors.white38,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '(${_formatCredits(repairCost)} CR)',
+                          style: TextStyle(
+                            color: canRepair ? Colors.black : _redAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _greenAccent,
+              disabledBackgroundColor:
+                  insufficientFunds ? Colors.white12 : Colors.white10,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+                side: insufficientFunds
+                    ? BorderSide(
+                        color: _redAccent.withValues(alpha: 0.45),
+                        width: 1.0,
+                      )
+                    : BorderSide.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRepairDialog(Map<String, dynamic> ship) async {
+    final int basePrice = (ship['base_price'] as num?)?.toInt() ?? 250000;
+    final double damagePercent = (ship['damage_percent'] as num?)?.toDouble() ?? 0.0;
+    final int repairCost = (ship['repair_cost'] as num?)?.toInt() ?? 0;
+    final List subsystems = ship['subsystems'] as List? ?? [];
+
+    final String? actionKey = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF10151E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: const BorderSide(color: _cyanColor, width: 1.5),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.build_circle_outlined, color: _greenAccent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'OFICINA DE REPAROS DA ESTAÇÃO',
+                  style: GoogleFonts.shareTechMono(
+                    color: _greenAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 390,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'NAVE: ${ship['name']} (${ship['registry']})',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _cardBg,
+                    border: Border.all(color: Colors.white12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'VALOR BASE DA NAVE NOVA:',
+                            style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                          ),
+                          Text(
+                            '${_formatCredits(basePrice)} CR',
+                            style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'AVARIA ACUMULADA:',
+                            style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                          ),
+                          Text(
+                            '${damagePercent.toStringAsFixed(1)}%',
+                            style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const Divider(color: Colors.white12, height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'CUSTO TOTAL DE REPARO:',
+                            style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '${_formatCredits(repairCost)} CR',
+                            style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'DETALHAMENTO POR SUBSISTEMA:',
+                  style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                ),
+                const SizedBox(height: 6),
+                ...subsystems.map((sub) {
+                  final String key = (sub['key'] ?? '').toString();
+                  final String name = (sub['name'] ?? '').toString();
+                  final double val = (sub['val'] as num?)?.toDouble() ?? 100.0;
+                  final int subCost = (sub['repair_cost'] as num?)?.toInt() ?? 0;
+                  final bool damaged = val < 100.0 && subCost > 0;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$name (${val.toStringAsFixed(0)}%)',
+                            style: GoogleFonts.shareTechMono(
+                              color: damaged ? Colors.white : Colors.white54,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                        if (damaged && key.isNotEmpty)
+                          InkWell(
+                            onTap: () => Navigator.of(ctx).pop(key),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _cyanColor.withValues(alpha: 0.15),
+                                border: Border.all(color: _cyanColor, width: 0.8),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: Text(
+                                'REPARAR (${_formatCredits(subCost)} CR)',
+                                style: GoogleFonts.shareTechMono(
+                                  color: _cyanColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            '100% OK',
+                            style: GoogleFonts.shareTechMono(
+                              color: _greenAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: Text(
+                'CANCELAR',
+                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: _greenAccent),
+              onPressed: () => Navigator.of(ctx).pop('ALL'),
+              icon: const Icon(Icons.build_rounded, color: Colors.black, size: 14),
+              label: Text(
+                'REPARAR TUDO (${_formatCredits(repairCost)} CR)',
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.black,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (actionKey == null) return;
+    await _repairVessel(ship, subsystemKey: actionKey == 'ALL' ? null : actionKey);
+  }
+
+  Future<void> _repairVessel(Map<String, dynamic> ship, {String? subsystemKey}) async {
+    if (_isRepairingVessel) return;
+    final int pilotUid = _getPilotUid();
+    final dynamic vesselUid = ship['vessel_uid'];
+    if (pilotUid == 0 || vesselUid == null) return;
+
+    setState(() {
+      _isRepairingVessel = true;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/hangar/repair-vessel');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pilot_uid': pilotUid,
+          'vessel_uid': vesselUid,
+          if (subsystemKey != null) 'subsystem_key': subsystemKey,
+        }),
+      );
+
+      if (!mounted) return;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+
+      if (response.statusCode == 200 && decoded['status'] == 'sucesso') {
+        widget.onProfileRefresh?.call();
+        await _fetchFleetFromApi();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Subsistemas reparados com sucesso!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(decoded['mensagem'] ?? 'Falha ao reparar subsistemas.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Erro de conexão ao reparar nave: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRepairingVessel = false;
+        });
+      }
+    }
+  }
+
   Widget _buildLegendItem(String text, Color color) {
     return Text(
       text,
@@ -1282,9 +1844,29 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
   // =========================================================================
   // VIEW: LOADOUT (Hardpoints + Catálogo + Comparador)
   // =========================================================================
+  String _buildCatalogItemSpecSummary(String category, Map<String, dynamic> item) {
+    final int dps = (item['dps'] as num?)?.toInt() ?? 0;
+    final int energy = (item['energy'] as num?)?.toInt() ?? 0;
+    final int range = (item['range'] as num?)?.toInt() ?? 0;
+    final String targetMod = (item['target_module'] ?? '-').toString();
+    final String effectVal = (item['effect_value'] ?? '-').toString();
+    final String usageType = (item['usage_type'] ?? '-').toString();
+    final String cooldown = (item['cooldown'] ?? '-').toString();
+
+    if (category == 'DISPOSITIVOS') {
+      return '$targetMod ($effectVal) · $energy MW';
+    }
+    if (category == 'UTILITÁRIOS') {
+      return '$usageType · $effectVal · Recarga $cooldown · $energy MW';
+    }
+    return 'DPS $dps · $energy MW · $range m';
+  }
+
   Widget _buildLoadoutFullView({required bool isDesktop}) {
     final currentShip = _fleet[_selectedShipIndex];
     final stats = currentShip['stats'] as Map<String, dynamic>;
+    final hardpointsMap = _getCurrentShipHardpoints();
+    final int pilotCredits = _getPilotCredits();
 
     Widget hardpointsSection = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1311,7 +1893,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
         ),
         const SizedBox(height: 10),
 
-        ..._hardpoints.entries.map((entry) {
+        ...hardpointsMap.entries.map((entry) {
           final catName = entry.key;
           final slots = entry.value;
           return Column(
@@ -1326,70 +1908,100 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 ),
               ),
               const SizedBox(height: 4),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: slots.map((slot) {
-                  final bool isFree = slot['free'] == true;
-                  final bool isSelected = _selectedSlotId == slot['id'];
+              if (slots.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'Nenhum slot disponível nesta nave',
+                    style: GoogleFonts.shareTechMono(color: Colors.white24, fontSize: 9),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: slots.map((slot) {
+                    final bool isFree = slot['free'] == true;
+                    final bool isSelected = _selectedSlotId == slot['id'];
 
-                  return InkWell(
-                    onTap: () {
-                      if (!isFree) {
-                        setState(() {
-                          _selectedSlotId = slot['id'];
+                    return InkWell(
+                      onTap: () {
+                        _updateState(() {
+                          _selectedSlotId = slot['id'].toString();
+                          if (_selectedLoadoutCategory != catName) {
+                            _selectedLoadoutCategory = catName;
+                            _selectedCatalogItemIndex = 0;
+                          }
                         });
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? _cyanColor.withValues(alpha: 0.2)
-                            : (isFree ? Colors.transparent : _cardBg),
-                        border: Border.all(
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
                           color: isSelected
-                              ? _cyanColor
-                              : (isFree ? Colors.white24 : Colors.white38),
-                          width: isSelected ? 1.5 : 0.8,
-                          style: isFree ? BorderStyle.solid : BorderStyle.solid,
+                              ? _cyanColor.withValues(alpha: 0.2)
+                              : (isFree ? Colors.transparent : _cardBg),
+                          border: Border.all(
+                            color: isSelected
+                                ? _cyanColor
+                                : (isFree ? Colors.white24 : Colors.white38),
+                            width: isSelected ? 1.5 : 0.8,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isFree ? Icons.add : Icons.check_circle_outline,
-                            size: 11,
-                            color: isFree ? Colors.white38 : _cyanColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            slot['name'],
-                            style: GoogleFonts.shareTechMono(
-                              color: isFree ? Colors.white38 : Colors.white,
-                              fontSize: 10,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isFree ? Icons.add : Icons.check_circle_outline,
+                              size: 11,
+                              color: isFree
+                                  ? (isSelected ? _cyanColor : Colors.white38)
+                                  : _cyanColor,
                             ),
-                          ),
-                          if (slot['qty'] != null) ...[
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             Text(
-                              'x${slot['qty']}',
+                              slot['name'].toString(),
                               style: GoogleFonts.shareTechMono(
-                                color: _amberAccent,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
+                                color: isFree
+                                    ? (isSelected ? _cyanColor : Colors.white38)
+                                    : Colors.white,
+                                fontSize: 10,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
+                            if (slot['qty'] != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                'x${slot['qty']}',
+                                style: GoogleFonts.shareTechMono(
+                                  color: _amberAccent,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                            if (!isFree) ...[
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: _isEquippingLoadout
+                                    ? null
+                                    : () => _unequipHardpointSlot(slot),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2.0),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 12,
+                                    color: _redAccent.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
+                    );
+                  }).toList(),
+                ),
               const SizedBox(height: 10),
             ],
           );
@@ -1410,7 +2022,9 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
               _buildStatCol(
                 'ENERGIA',
                 '${stats['energyUsed']} / ${stats['energyMax']} MW',
-                _cyanColor,
+                (stats['energyUsed'] as num) > (stats['energyMax'] as num)
+                    ? _redAccent
+                    : _cyanColor,
               ),
               _buildStatCol('CARGA/MASSA', '${stats['mass']} T', Colors.white),
             ],
@@ -1419,11 +2033,14 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
       ],
     );
 
+    final List<Map<String, dynamic>> currentCatItems =
+        _catalog[_selectedLoadoutCategory] ?? [];
+
     Widget catalogSection = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'CATÁLOGO DE MÓDULOS',
+          'CATÁLOGO DE ITENS',
           style: GoogleFonts.shareTechMono(
             color: Colors.white,
             fontSize: 14,
@@ -1441,9 +2058,14 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 padding: const EdgeInsets.only(right: 6.0),
                 child: InkWell(
                   onTap: () {
-                    setState(() {
+                    _updateState(() {
                       _selectedLoadoutCategory = cat;
                       _selectedCatalogItemIndex = 0;
+                      final catSlots = hardpointsMap[cat] ?? [];
+                      if (catSlots.isNotEmpty &&
+                          !catSlots.any((s) => s['id'] == _selectedSlotId)) {
+                        _selectedSlotId = catSlots.first['id'].toString();
+                      }
                     });
                   },
                   child: Container(
@@ -1469,81 +2091,137 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
         ),
         const SizedBox(height: 10),
 
-        // Lista de Itens do catálogo
-        ...(_catalog[_selectedLoadoutCategory] ?? []).asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value;
-          final bool isSel = _selectedCatalogItemIndex == index;
-          final bool inStock = item['inStock'] == true;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.all(8),
+        if (currentCatItems.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isSel ? _cyanColor.withValues(alpha: 0.12) : _cardBg,
-              border: Border.all(
-                color: isSel ? _cyanColor : Colors.white12,
-                width: isSel ? 1.5 : 0.8,
-              ),
+              color: _cardBg,
+              border: Border.all(color: Colors.white12),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item['name'],
+            child: Center(
+              child: Text(
+                'Nenhum item desta categoria disponível no estoque ou no mercado da estação.',
+                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          // Lista de Itens do catálogo
+          ...currentCatItems.asMap().entries.map((entry) {
+            final index = entry.key;
+            final item = entry.value;
+            final bool isSel = _selectedCatalogItemIndex == index;
+            final bool inStock = item['inStock'] == true;
+            final int stockCount = (item['stock'] as num?)?.toInt() ?? 0;
+            final int marketStock = (item['market_stock'] as num?)?.toInt() ?? 0;
+            final int buyPrice = (item['buy_price'] as num?)?.toInt() ?? 0;
+            final bool canAfford = pilotCredits >= buyPrice;
+
+            String availabilityLabel;
+            if (inStock && marketStock > 0) {
+              availabilityLabel =
+                  '$stockCount no estoque · $marketStock no mercado (${_formatCredits(buyPrice)} CR)';
+            } else if (inStock) {
+              availabilityLabel = '$stockCount no estoque';
+            } else {
+              availabilityLabel =
+                  '$marketStock no mercado · ${_formatCredits(buyPrice)} CR';
+            }
+
+            return InkWell(
+              onTap: () {
+                _updateState(() {
+                  _selectedCatalogItemIndex = index;
+                });
+              },
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isSel ? _cyanColor.withValues(alpha: 0.12) : _cardBg,
+                  border: Border.all(
+                    color: isSel ? _cyanColor : Colors.white12,
+                    width: isSel ? 1.5 : 0.8,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['name'].toString(),
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _buildCatalogItemSpecSummary(_selectedLoadoutCategory, item),
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white54,
+                              fontSize: 9,
+                            ),
+                          ),
+                          Text(
+                            availabilityLabel,
+                            style: GoogleFonts.shareTechMono(
+                              color: inStock
+                                  ? _greenAccent
+                                  : (canAfford ? _amberAccent : _redAccent),
+                              fontSize: 8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _isEquippingLoadout || (!inStock && !canAfford)
+                          ? null
+                          : () {
+                              _updateState(() {
+                                _selectedCatalogItemIndex = index;
+                              });
+                              _equipCatalogItem(item);
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: inStock
+                            ? _cyanColor
+                            : (canAfford ? _amberAccent : const Color(0xFF1E2430)),
+                        disabledBackgroundColor: const Color(0xFF1E2430),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        minimumSize: Size.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(2),
+                          side: (!inStock && !canAfford)
+                              ? BorderSide(color: _redAccent.withValues(alpha: 0.5), width: 0.8)
+                              : BorderSide.none,
+                        ),
+                      ),
+                      child: Text(
+                        inStock
+                            ? 'EQUIPAR'
+                            : 'COMPRAR (${_formatCredits(buyPrice)} CR)',
                         style: GoogleFonts.shareTechMono(
-                          color: Colors.white,
-                          fontSize: 11,
+                          color: (!inStock && !canAfford) ? _redAccent : Colors.black,
+                          fontSize: 9,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'DPS ${item['dps']} · ${item['energy']} MW · ${item['range']} m',
-                        style: GoogleFonts.shareTechMono(
-                          color: Colors.white54,
-                          fontSize: 9,
-                        ),
-                      ),
-                      Text(
-                        inStock ? '${item['stock']} no inventário' : 'sem estoque',
-                        style: GoogleFonts.shareTechMono(
-                          color: inStock ? _greenAccent : _amberAccent,
-                          fontSize: 8,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedCatalogItemIndex = index;
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: inStock ? _cyanColor : _amberAccent,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
-                  ),
-                  child: Text(
-                    inStock ? 'EQUIPAR' : 'COMPRAR',
-                    style: GoogleFonts.shareTechMono(
-                      color: Colors.black,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        }),
+              ),
+            );
+          }),
 
         const SizedBox(height: 10),
         // Caixa de Comparação
@@ -1596,6 +2274,51 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
     );
   }
 
+  Map<String, dynamic>? _getSelectedHardpointSlotData() {
+    final hp = _getCurrentShipHardpoints();
+    // Procura primeiro pelo _selectedSlotId em todas as categorias
+    for (final entry in hp.entries) {
+      for (final slot in entry.value) {
+        if (slot['id'] == _selectedSlotId) {
+          return slot;
+        }
+      }
+    }
+    // Se não achar, pega o primeiro slot da categoria atual
+    final catSlots = hp[_selectedLoadoutCategory] ?? [];
+    if (catSlots.isNotEmpty) {
+      return catSlots.first;
+    }
+    return null;
+  }
+
+  Widget _buildCompareMetricText(
+    String label,
+    int candidateVal,
+    int currentVal,
+    String unit, {
+    bool lowerIsBetter = false,
+  }) {
+    String arrow = '';
+    Color color = Colors.white70;
+    if (candidateVal > currentVal) {
+      arrow = ' ▲';
+      color = lowerIsBetter ? _redAccent : _greenAccent;
+    } else if (candidateVal < currentVal) {
+      arrow = ' ▼';
+      color = lowerIsBetter ? _greenAccent : _amberAccent;
+    }
+    final String unitSuffix = unit.isNotEmpty ? ' $unit' : '';
+    return Text(
+      '$label: $candidateVal$unitSuffix$arrow',
+      style: GoogleFonts.shareTechMono(
+        color: color,
+        fontSize: 9,
+        fontWeight: arrow.isNotEmpty ? FontWeight.bold : FontWeight.normal,
+      ),
+    );
+  }
+
   Widget _buildComparisonBox() {
     final catItems = _catalog[_selectedLoadoutCategory] ?? [];
     final selectedItem =
@@ -1604,6 +2327,74 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
             : null;
 
     if (selectedItem == null) return const SizedBox.shrink();
+
+    final currentSlot = _getSelectedHardpointSlotData();
+    final bool isSlotFree = currentSlot == null || currentSlot['free'] == true;
+    final String slotIdLabel =
+        currentSlot != null ? currentSlot['id'].toString().toUpperCase() : 'SLOT';
+    final String currentName =
+        isSlotFree ? '+ SLOT LIVRE' : (currentSlot['name'] ?? 'Vazio').toString();
+
+    final int curDps = isSlotFree ? 0 : ((currentSlot['dps'] as num?)?.toInt() ?? 0);
+    final int curEnergy = isSlotFree ? 0 : ((currentSlot['energy'] as num?)?.toInt() ?? 0);
+    final int curRange = isSlotFree ? 0 : ((currentSlot['range'] as num?)?.toInt() ?? 0);
+    final String curTarget =
+        isSlotFree ? '-' : (currentSlot['target_module'] ?? '-').toString();
+    final String curEffect =
+        isSlotFree ? '-' : (currentSlot['effect_value'] ?? '-').toString();
+    final String curUsage =
+        isSlotFree ? '-' : (currentSlot['usage_type'] ?? '-').toString();
+    final String curCooldown =
+        isSlotFree ? '-' : (currentSlot['cooldown'] ?? '-').toString();
+
+    final int selDps = (selectedItem['dps'] as num?)?.toInt() ?? 0;
+    final int selEnergy = (selectedItem['energy'] as num?)?.toInt() ?? 0;
+    final int selRange = (selectedItem['range'] as num?)?.toInt() ?? 0;
+    final String selTarget = (selectedItem['target_module'] ?? '-').toString();
+    final String selEffect = (selectedItem['effect_value'] ?? '-').toString();
+    final String selUsage = (selectedItem['usage_type'] ?? '-').toString();
+    final String selCooldown = (selectedItem['cooldown'] ?? '-').toString();
+    final bool selInStock = selectedItem['inStock'] == true;
+
+    List<Widget> leftSpecs;
+    List<Widget> rightSpecs;
+
+    if (_selectedLoadoutCategory == 'DISPOSITIVOS') {
+      leftSpecs = [
+        Text('Módulo: $curTarget', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Efeito: $curEffect', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Energia: $curEnergy MW', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+      ];
+      rightSpecs = [
+        Text('Módulo: $selTarget', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Efeito: $selEffect', style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+        _buildCompareMetricText('Energia', selEnergy, curEnergy, 'MW', lowerIsBetter: true),
+      ];
+    } else if (_selectedLoadoutCategory == 'UTILITÁRIOS') {
+      leftSpecs = [
+        Text('Uso: $curUsage', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Efeito: $curEffect', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Recarga: $curCooldown', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Energia: $curEnergy MW', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+      ];
+      rightSpecs = [
+        Text('Uso: $selUsage', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Efeito: $selEffect', style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text('Recarga: $selCooldown', style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 9)),
+        _buildCompareMetricText('Energia', selEnergy, curEnergy, 'MW', lowerIsBetter: true),
+      ];
+    } else {
+      leftSpecs = [
+        Text('DPS: $curDps', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Energia: $curEnergy MW', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+        Text('Alcance: $curRange m', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+      ];
+      rightSpecs = [
+        _buildCompareMetricText('DPS', selDps, curDps, ''),
+        _buildCompareMetricText('Energia', selEnergy, curEnergy, 'MW', lowerIsBetter: true),
+        _buildCompareMetricText('Alcance', selRange, curRange, 'm'),
+      ];
+    }
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -1616,7 +2407,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '// COMPARAÇÃO DE MÓDULOS',
+            '// COMPARAÇÃO DE ITENS',
             style: GoogleFonts.shareTechMono(
               color: _cyanColor,
               fontSize: 10,
@@ -1630,31 +2421,55 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('ATUAL (CAN:0)', style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 8)),
-                    Text('Pulsar MK-I', style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    Text('DPS: 180', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
-                    Text('Energia: 42 MW', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
-                    Text('Alcance: 1200 m', style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9)),
+                    Text(
+                      'ATUAL ($slotIdLabel)',
+                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 8),
+                    ),
+                    Text(
+                      currentName,
+                      style: GoogleFonts.shareTechMono(
+                        color: isSlotFree ? Colors.white38 : Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    ...leftSpecs,
                   ],
                 ),
               ),
-              Text(
-                'VS',
-                style: GoogleFonts.shareTechMono(
-                  color: _amberAccent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  'VS',
+                  style: GoogleFonts.shareTechMono(
+                    color: _amberAccent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('SELECIONADO', style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 8)),
-                    Text(selectedItem['name'], style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                    Text('DPS: ${selectedItem['dps']} ▲', style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold)),
-                    Text('Energia: ${selectedItem['energy']} MW ▲', style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 9)),
-                    Text('Alcance: ${selectedItem['range']} m ▼', style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 9)),
+                    Text(
+                      selInStock ? 'SELECIONADO (ESTOQUE)' : 'SELECIONADO (MERCADO)',
+                      style: GoogleFonts.shareTechMono(
+                        color: selInStock ? _cyanColor : _amberAccent,
+                        fontSize: 8,
+                      ),
+                    ),
+                    Text(
+                      selectedItem['name'].toString(),
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    ...rightSpecs,
                   ],
                 ),
               ),
@@ -1669,44 +2484,54 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: const Color(0xFF0A0D12),
-          insetPadding: const EdgeInsets.all(20),
-          child: Container(
-            width: 900,
-            height: 600,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: _cyanColor, width: 1.5),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            _dialogSetState = setDialogState;
+            return Dialog(
+              backgroundColor: const Color(0xFF0A0D12),
+              insetPadding: const EdgeInsets.all(20),
+              child: Container(
+                width: 900,
+                height: 620,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: _cyanColor, width: 1.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
                   children: [
-                    Text(
-                      'CONFIGURAÇÃO DE LOADOUT',
-                      style: GoogleFonts.shareTechMono(
-                        color: _cyanColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'CONFIGURAÇÃO DE LOADOUT',
+                          style: GoogleFonts.shareTechMono(
+                            color: _cyanColor,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () {
+                            _dialogSetState = null;
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    const Divider(color: Colors.white24),
+                    Expanded(child: _buildLoadoutFullView(isDesktop: true)),
                   ],
                 ),
-                const Divider(color: Colors.white24),
-                Expanded(child: _buildLoadoutFullView(isDesktop: true)),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
-    );
+    ).then((_) {
+      _dialogSetState = null;
+    });
   }
 }
 

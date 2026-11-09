@@ -8,6 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'player_profile_screen.dart';
 import 'modules/messaging/messaging_module_widget.dart';
 import 'modules/hangar/hangar_module_widget.dart';
+import 'modules/market/market_module_widget.dart';
+import 'modules/inventory/inventory_module_widget.dart';
+import 'modules/factory/factory_module_widget.dart';
 import 'services/notification_websocket_service.dart';
 
 class MainLayoutScreen extends StatefulWidget {
@@ -448,7 +451,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         ),
       ),
       child: Text(
-        'LOCALIZAÇÃO: ${op['location'] ?? 'DESCONHECIDA'}',
+        'LOCALIZAÇÃO: ${(op['location'] != null && op['location'].toString().trim().isNotEmpty) ? op['location'] : ((op['orbit_name'] != null || op['station_name'] != null) ? 'KALI – ${(op['orbit_name'] ?? 'ÓRBITA ${op['orbit'] ?? ''}').toString().toUpperCase()} – ${(op['station_name'] ?? 'ESTAÇÃO ${op['station'] ?? ''}').toString().toUpperCase()}' : 'DESCONHECIDA')}',
         style: GoogleFonts.shareTechMono(
           color: Colors.white,
           fontSize: 12,
@@ -479,17 +482,30 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
         );
       case 2:
         return HangarModuleWidget(
+          onProfileRefresh: _refreshProfileData,
           profileData: _currentProfileData,
           apiBaseUrl: widget.apiBaseUrl,
         );
       case 3:
         return _buildPlaceholderScreen('QUADRO DE CONTRATOS E MISSÕES');
       case 4:
-        return _buildPlaceholderScreen('MERCADO GALÁCTICO DE SUPRIMENTOS');
+        return MarketModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+          onProfileRefresh: _refreshProfileData,
+        );
       case 5:
-        return _buildPlaceholderScreen('ESTOQUE DE CARGA E RECURSOS');
+        return InventoryModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+          onProfileRefresh: _refreshProfileData,
+        );
       case 6:
-        return _buildPlaceholderScreen('FÁBRICA E LINHA DE PRODUÇÃO');
+        return FactoryModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+          onProfileRefresh: _refreshProfileData,
+        );
       default:
         return _buildPlaceholderScreen('TELA DESCONHECIDA');
     }

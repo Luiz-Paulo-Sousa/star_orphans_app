@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'reset_password_screen.dart';
 import 'register_screen.dart';
 import 'main_layout_screen.dart'; // Importação do layout principal unificado
+import 'services/credential_storage.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +20,37 @@ class _LoginScreenState extends State<LoginScreen> {
   final _operatorController = TextEditingController();
   final _accessKeyController = TextEditingController();
   bool _isLoading = false;
+  bool _rememberCredentials = true;
+  bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarCredenciaisSalvas();
+  }
+
+  Future<void> _carregarCredenciaisSalvas() async {
+    final saved = await CredentialStorage.loadCredentials();
+    if (!mounted) return;
+    setState(() {
+      _rememberCredentials = saved['remember'] != false;
+      final String savedUser = (saved['username'] ?? '').toString();
+      final String savedPass = (saved['password'] ?? '').toString();
+      if (savedUser.isNotEmpty) {
+        _operatorController.text = savedUser;
+      }
+      if (savedPass.isNotEmpty) {
+        _accessKeyController.text = savedPass;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _operatorController.dispose();
+    _accessKeyController.dispose();
+    super.dispose();
+  }
 
   Future<void> _autenticar() async {
     String username = _operatorController.text.trim();
@@ -34,9 +67,12 @@ class _LoginScreenState extends State<LoginScreen> {
     var digest = sha256.convert(bytes);
     String passwordHash = digest.toString();
 
-    final String host = (Uri.base.host.isNotEmpty && Uri.base.host != 'localhost' && Uri.base.host != '127.0.0.1')
-        ? Uri.base.host
-        : '26.239.180.177';
+    final String host =
+        (Uri.base.host.isNotEmpty &&
+                Uri.base.host != 'localhost' &&
+                Uri.base.host != '127.0.0.1')
+            ? Uri.base.host
+            : '26.239.180.177';
     final String baseUrl = 'http://$host:8020';
     var url = Uri.parse('$baseUrl/login');
 
@@ -52,6 +88,14 @@ class _LoginScreenState extends State<LoginScreen> {
       var dados = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        // Salva (ou limpa) as credenciais conforme a opção marcada
+        await CredentialStorage.saveCredentials(
+          remember: _rememberCredentials,
+          username: username,
+          password: senhaPura,
+        );
+        TextInput.finishAutofillContext();
+
         int accountId = dados['account_id'];
 
         // Busca os dados completos do perfil do operador antes de abrir o layout principal
@@ -156,140 +200,189 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Column(
+              child: AutofillGroup(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Column(
+                        children: [
+                          Image.asset(
+                            'assets/images/star_orphans.png',
+                            height: 80,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(
+                                Icons.star_outline,
+                                color: colorCyan,
+                                size: 48,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'COMPANION',
+                            style: GoogleFonts.shareTechMono(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                          Text(
+                            'AUTENTICAÇÃO DE OPERADOR v1.0',
+                            style: GoogleFonts.shareTechMono(
+                              fontSize: 10,
+                              color: colorCyan.withValues(alpha: 0.8),
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    _buildLabel('ID DO OPERADOR'),
+                    const SizedBox(height: 6),
+                    _buildTextField(
+                      controller: _operatorController,
+                      hintText: 'Nome',
+                      icon: Icons.person_outline,
+                      autofillHints: const [AutofillHints.username],
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildLabel('CHAVE DE ACESSO'),
+                    const SizedBox(height: 6),
+                    _buildTextField(
+                      controller: _accessKeyController,
+                      hintText: '••••••••',
+                      isPassword: true,
+                      icon: Icons.key_outlined,
+                      autofillHints: const [AutofillHints.password],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Checkbox para salvar usuário e senha localmente
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _rememberCredentials = !_rememberCredentials;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: Checkbox(
+                                value: _rememberCredentials,
+                                activeColor: colorCyan,
+                                checkColor: Colors.black,
+                                side: BorderSide(
+                                  color: colorCyan.withValues(alpha: 0.6),
+                                  width: 1.2,
+                                ),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _rememberCredentials = val ?? true;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'SALVAR USUÁRIO E SENHA NESTE DISPOSITIVO',
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _autenticar,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0066FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        elevation: 5,
+                        shadowColor: colorCyan.withValues(alpha: 0.5),
+                      ),
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : Text(
+                                'AUTENTICAR',
+                                style: GoogleFonts.shareTechMono(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        _buildFooterLink('REDEFINIR CHAVE', () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ResetPasswordScreen(),
+                            ),
+                          );
+                        }),
+
                         Image.asset(
-                          'assets/images/star_orphans.png',
-                          height: 80,
+                          'assets/images/xama.png',
+                          height: 52,
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
-                            return const Icon(
-                              Icons.star_outline,
-                              color: colorCyan,
-                              size: 48,
+                            return Text(
+                              'XAMÃ',
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.white38,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
                             );
                           },
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'COMPANION',
-                          style: GoogleFonts.shareTechMono(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 3,
-                          ),
-                        ),
-                        Text(
-                          'AUTENTICAÇÃO DE OPERADOR v1.0',
-                          style: GoogleFonts.shareTechMono(
-                            fontSize: 10,
-                            color: colorCyan.withValues(alpha: 0.8),
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
 
-                  _buildLabel('ID DO OPERADOR'),
-                  const SizedBox(height: 6),
-                  _buildTextField(
-                    controller: _operatorController,
-                    hintText: 'Nome',
-                    icon: Icons.person_outline,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildLabel('CHAVE DE ACESSO'),
-                  const SizedBox(height: 6),
-                  _buildTextField(
-                    controller: _accessKeyController,
-                    hintText: '••••••••',
-                    isPassword: true,
-                    icon: Icons.key_outlined,
-                  ),
-                  const SizedBox(height: 28),
-
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _autenticar,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0066FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      elevation: 5,
-                      shadowColor: colorCyan.withValues(alpha: 0.5),
-                    ),
-                    child:
-                        _isLoading
-                            ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                            : Text(
-                              'AUTENTICAR',
-                              style: GoogleFonts.shareTechMono(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 2,
-                              ),
-                            ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _buildFooterLink('REDEFINIR CHAVE', () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ResetPasswordScreen(),
-                          ),
-                        );
-                      }),
-
-                      Image.asset(
-                        'assets/images/xama.png',
-                        height: 52,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Text(
-                            'XAMÃ',
-                            style: GoogleFonts.shareTechMono(
-                              color: Colors.white38,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                        _buildFooterLink('NOVO OPERADOR?', () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const RegisterScreen(),
                             ),
                           );
-                        },
-                      ),
-
-                      _buildFooterLink('NOVO OPERADOR?', () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RegisterScreen(),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ],
+                        }),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -314,10 +407,15 @@ class _LoginScreenState extends State<LoginScreen> {
     required String hintText,
     bool isPassword = false,
     required IconData icon,
+    Iterable<String>? autofillHints,
   }) {
     return TextField(
       controller: controller,
-      obscureText: isPassword,
+      obscureText: isPassword ? _obscurePassword : false,
+      autofillHints: autofillHints,
+      onSubmitted: (_) {
+        if (!_isLoading) _autenticar();
+      },
       style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
         prefixIcon: Icon(
@@ -325,6 +423,23 @@ class _LoginScreenState extends State<LoginScreen> {
           color: const Color(0xFF00D2FF).withValues(alpha: 0.6),
           size: 18,
         ),
+        suffixIcon:
+            isPassword
+                ? IconButton(
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.white38,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                )
+                : null,
         hintText: hintText,
         hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2)),
         filled: true,

@@ -1,26 +1,24 @@
 name: teste_flutter_01
 description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
   sdk: ^3.7.0
 
-# Dependencies specify other packages that your package needs in order to work.
 dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
   crypto: ^3.0.3
-  
+  web: any
+  path_provider: any
+
   # Novas dependências para WebSockets e Notificações Nativas (Windows/Android)
   web_socket_channel: ^2.4.0
   flutter_local_notifications: ^17.0.0
 
-  # The following adds the Cupertino Icons font to your application.
   cupertino_icons: ^1.0.8
   google_fonts: ^6.3.2
   image_picker: ^1.2.3
@@ -29,22 +27,10 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices.
   flutter_lints: ^5.0.0
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
   assets:
     - assets/images/star_orphans.png
     - assets/images/xama.png
-    

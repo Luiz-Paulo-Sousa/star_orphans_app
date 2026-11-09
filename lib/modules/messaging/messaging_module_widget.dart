@@ -50,7 +50,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   List<dynamic> _contactsList = [];
   int? _selectedContactUid;
 
-  int _currentSectorUid = 2;
+  int _currentOrbitUid = 2;
 
   List<dynamic> _messagesList = [];
   bool _isLoadingMessages = false;
@@ -69,7 +69,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
   void initState() {
     super.initState();
     _activeTab = widget.initialTab;
-    _fetchPilotSector();
+    _fetchPilotOrbit();
     _fetchMessageChannels();
     _fetchContactsList();
     _fetchUnreadDetails();
@@ -139,7 +139,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
   bool _isBroadcastChannel(String channelName) {
     final upper = channelName.toUpperCase();
-    return upper == 'SETOR' ||
+    return upper == 'ÓRBITA' ||
+        upper == 'ORBITA' ||
         upper == 'CORPORAÇÃO' ||
         upper == 'EQUIPE' ||
         upper == 'ESQUADRILHA';
@@ -171,7 +172,7 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
       setState(() {
         _channelsList = [
           {'uid': 1, 'description': 'COALIZÃO'},
-          {'uid': 2, 'description': 'SETOR'},
+          {'uid': 2, 'description': 'ÓRBITA'},
           {'uid': 3, 'description': 'CORPORAÇÃO'},
           {'uid': 4, 'description': 'EQUIPE'},
           {'uid': 5, 'description': 'ESQUADRILHA'},
@@ -374,22 +375,22 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     }
   }
 
-  Future<void> _fetchPilotSector() async {
+  Future<void> _fetchPilotOrbit() async {
     final pilotUid = _getPilotUid();
     if (pilotUid == 0) return;
 
     try {
       final response = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/channels/pilot-sector/$pilotUid'),
+        Uri.parse('${widget.apiBaseUrl}/api/channels/pilot-orbit/$pilotUid'),
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
-          _currentSectorUid = data['sectorUid'] ?? 2;
+          _currentOrbitUid = data['orbitUid'] ?? 2;
         });
       }
     } catch (e) {
-      debugPrint('Erro ao buscar setor do piloto: $e');
+      debugPrint('Erro ao buscar órbita do piloto: $e');
     }
   }
 
@@ -423,23 +424,23 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
             }
           });
         }
-      } else if (channelUpper == 'SETOR') {
+      } else if (channelUpper == 'ÓRBITA' || channelUpper == 'ORBITA') {
         final response = await http.get(
           Uri.parse(
-            '${widget.apiBaseUrl}/api/channels/members/sector/$pilotUid',
+            '${widget.apiBaseUrl}/api/channels/members/orbit/$pilotUid',
           ),
         );
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final list = data['pilots'] ?? [];
-          final int sectorUid = data['channel_uid'] ?? _currentSectorUid;
+          final int orbitUid = data['channel_uid'] ?? _currentOrbitUid;
           setState(() {
             _dynamicSubchannelsLabel =
-                data['channel_label'] ?? 'SETOR: AGARTHA';
+                data['channel_label'] ?? 'ÓRBITA: AGARTHA';
             _subchannelsList = list;
-            _groupChannelUid = sectorUid;
+            _groupChannelUid = orbitUid;
           });
-          _fetchMessages(2, sectorUid);
+          _fetchMessages(2, orbitUid);
         }
       } else if (channelUpper == 'CORPORAÇÃO') {
         final response = await http.get(
@@ -688,7 +689,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
     switch (upper) {
       case 'COALIZÃO':
         return 1;
-      case 'SETOR':
+      case 'ÓRBITA':
+      case 'ORBITA':
         return 2;
       case 'CORPORAÇÃO':
         return 3;
@@ -801,12 +803,12 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
           isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid || incomingSubchannelUid == 0);
           subchannelToFetch = _selectedSubchannelUid ?? incomingSubchannelUid;
         } else if (_isBroadcastChannel(_selectedChannel)) {
-          // Em canais de grupo (Setor, Corporação, Equipe, Esquadrilha),
+          // Em canais de grupo (Órbita, Corporação, Equipe, Esquadrilha),
           // se o canal aberto na tela for o canal da mensagem, trata-se da conversa ativa
           isCurrentConversation = true;
           subchannelToFetch = _groupChannelUid ??
               (currentChUid == 2
-                  ? _currentSectorUid
+                  ? _currentOrbitUid
                   : (incomingSubchannelUid != 0 ? incomingSubchannelUid : 1));
         } else if (currentChUid == 6) {
           isCurrentConversation = (_selectedSubchannelUid == incomingSubchannelUid ||
@@ -854,10 +856,10 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
         setState(() => _isSendingMessage = false);
         return;
       }
-      if (channelUpper == 'SETOR') {
+      if (channelUpper == 'ÓRBITA' || channelUpper == 'ORBITA') {
         channelUid = 2;
-        channelType = 'sector';
-        targetSubchannel = _groupChannelUid ?? _currentSectorUid;
+        channelType = 'orbit';
+        targetSubchannel = _groupChannelUid ?? _currentOrbitUid;
       } else if (channelUpper == 'CORPORAÇÃO') {
         channelUid = 3;
         channelType = 'corporation';
@@ -1409,7 +1411,8 @@ class _MessagingModuleWidgetState extends State<MessagingModuleWidget> {
 
                           final String chUpper = _selectedChannel.toUpperCase();
                           final bool isTargetChannel =
-                              chUpper == 'SETOR' ||
+                              chUpper == 'ÓRBITA' ||
+                              chUpper == 'ORBITA' ||
                               chUpper == 'CORPORAÇÃO' ||
                               chUpper == 'EQUIPE' ||
                               chUpper == 'ESQUADRILHA';
