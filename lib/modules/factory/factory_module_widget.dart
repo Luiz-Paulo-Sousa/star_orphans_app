@@ -571,7 +571,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     );
   }
 
-  // Card do item com tamanho reduzido e botão no canto superior direito
+  // Card do item com tamanho reduzido, botão no topo e imagem à esquerda
   Widget _buildRecipeCard(Map<String, dynamic> recipe) {
     final name = recipe['name'] ?? 'Item';
     final timeSec = recipe['craft_time'] ?? 60;
@@ -579,6 +579,8 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     final canCraft = recipe['can_craft'] == true;
     final itemCode = recipe['item_code'];
     final ingredients = List<Map<String, dynamic>>.from(recipe['ingredients'] ?? []);
+    final imageUrl = recipe['image']?.toString();
+    final itemType = recipe['item_type'] as int? ?? 1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 7),
@@ -591,122 +593,145 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
         borderRadius: BorderRadius.circular(3),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Column(
+        padding: const EdgeInsets.all(8),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Linha Superior: Nome do Item + Botão de Fabricar (posicionado no topo, 20% menor)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    name.toString().toUpperCase(),
-                    style: GoogleFonts.shareTechMono(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.8,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            // Imagem do Item respeitando a altura do box de informações
+            Container(
+              width: 66,
+              height: 66,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B0E14),
+                border: Border.all(
+                  color: canCraft ? _greenAccent.withValues(alpha: 0.5) : _cyanColor.withValues(alpha: 0.25),
+                  width: 1.0,
                 ),
-                const SizedBox(width: 8),
-                // Botão de Iniciar Fabricação reposicionado e reduzido em 20%
-                ElevatedButton.icon(
-                  onPressed: (canCraft && !_isSubmitting)
-                      ? () => _startCrafting(itemCode, 1)
-                      : null,
-                  icon: const Icon(Icons.play_arrow_rounded, size: 13),
-                  label: Text(
-                    _isSubmitting ? 'AGUARDE' : 'FABRICAR',
-                    style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 9.5),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: canCraft ? const Color(0xFF152A1E) : Colors.white.withValues(alpha: 0.05),
-                    foregroundColor: canCraft ? _greenAccent : Colors.white24,
-                    side: BorderSide(
-                      color: canCraft ? _greenAccent : Colors.white12,
-                      width: 1,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: const Size(0, 26),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
-                    elevation: 0,
-                  ),
-                ),
-              ],
+                borderRadius: BorderRadius.circular(3),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: _buildItemImage(imageUrl, itemType),
             ),
-            const SizedBox(height: 3),
-            // Linha com tempo e custo
-            Row(
-              children: [
-                const Icon(Icons.timer_outlined, size: 11, color: Colors.white60),
-                const SizedBox(width: 3),
-                Text(
-                  _formatSeconds(timeSec),
-                  style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10.5),
-                ),
-                const SizedBox(width: 14),
-                const Icon(Icons.monetization_on_outlined, size: 11, color: _greenAccent),
-                const SizedBox(width: 3),
-                Text(
-                  '$cost CR',
-                  style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10.5),
-                ),
-              ],
-            ),
-            const Divider(color: Colors.white10, height: 10),
-            // Seção de Insumos (Recursos exigidos no estoque)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  'ESTOQUE: ',
-                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
-                ),
-                Expanded(
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: ingredients.map((ing) {
-                      final ingName = ing['name'] ?? 'Insumo';
-                      final reqAmt = ing['required_amount'] ?? 1;
-                      final availAmt = ing['available_amount'] ?? 0;
-                      final sufficient = ing['sufficient'] == true;
-
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _panelBg,
-                          border: Border.all(
-                            color: sufficient ? _greenAccent.withValues(alpha: 0.35) : _redAccent.withValues(alpha: 0.35),
-                            width: 0.7,
+            const SizedBox(width: 8),
+            // Informações e Ações à direita
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Linha Superior: Nome do Item + Botão de Fabricar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name.toString().toUpperCase(),
+                          style: GoogleFonts.shareTechMono(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
                           ),
-                          borderRadius: BorderRadius.circular(2),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '$ingName: ',
-                              style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
-                            ),
-                            Text(
-                              '$availAmt/$reqAmt',
-                              style: GoogleFonts.shareTechMono(
-                                color: sufficient ? _greenAccent : _redAccent,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(width: 6),
+                      ElevatedButton.icon(
+                        onPressed: (canCraft && !_isSubmitting)
+                            ? () => _startCrafting(itemCode, 1)
+                            : null,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 13),
+                        label: Text(
+                          _isSubmitting ? 'AGUARDE' : 'FABRICAR',
+                          style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold, fontSize: 9.5),
                         ),
-                      );
-                    }).toList(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: canCraft ? const Color(0xFF152A1E) : Colors.white.withValues(alpha: 0.05),
+                          foregroundColor: canCraft ? _greenAccent : Colors.white24,
+                          side: BorderSide(
+                            color: canCraft ? _greenAccent : Colors.white12,
+                            width: 1,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: const Size(0, 26),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  // Linha com tempo e custo
+                  Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 11, color: Colors.white60),
+                      const SizedBox(width: 3),
+                      Text(
+                        _formatSeconds(timeSec),
+                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                      ),
+                      const SizedBox(width: 12),
+                      const Icon(Icons.monetization_on_outlined, size: 11, color: _greenAccent),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$cost CR',
+                        style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  const Divider(color: Colors.white10, height: 8),
+                  // Seção de Insumos (Recursos exigidos no estoque)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'ESTOQUE: ',
+                        style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9),
+                      ),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 5,
+                          runSpacing: 3,
+                          children: ingredients.map((ing) {
+                            final ingName = ing['name'] ?? 'Insumo';
+                            final reqAmt = ing['required_amount'] ?? 1;
+                            final availAmt = ing['available_amount'] ?? 0;
+                            final sufficient = ing['sufficient'] == true;
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: _panelBg,
+                                border: Border.all(
+                                  color: sufficient ? _greenAccent.withValues(alpha: 0.35) : _redAccent.withValues(alpha: 0.35),
+                                  width: 0.7,
+                                ),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '$ingName: ',
+                                    style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 9.5),
+                                  ),
+                                  Text(
+                                    '$availAmt/$reqAmt',
+                                    style: GoogleFonts.shareTechMono(
+                                      color: sufficient ? _greenAccent : _redAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 9.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -751,6 +776,8 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     final stationName = item['station_name'] ?? 'Estação';
     final status = (item['status'] ?? 'in_progress').toString().toLowerCase();
     final remainingSec = (item['remaining_seconds'] as int? ?? 0);
+    final imageUrl = item['image']?.toString();
+    final itemType = item['item_type'] as int? ?? 1;
 
     final isInProgress = status == 'in_progress';
     final isCompleted = status == 'completed';
@@ -768,92 +795,163 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: _cardBg,
         border: Border.all(color: statusColor.withValues(alpha: 0.4), width: 1),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'ORDEM #$queueUid - ${amount}x ${name.toString().toUpperCase()}',
-                style: GoogleFonts.shareTechMono(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: _panelBg,
-                  border: Border.all(color: statusColor, width: 0.8),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: GoogleFonts.shareTechMono(
-                    color: statusColor,
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'LOCAL: ${stationName.toString().toUpperCase()}',
-            style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 10),
-          ),
-          const SizedBox(height: 6),
-          if (isInProgress && remainingSec > 0) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: const LinearProgressIndicator(
-                backgroundColor: Colors.white12,
-                color: _cyanColor,
-                minHeight: 3.5,
-              ),
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0E14),
+              border: Border.all(color: statusColor.withValues(alpha: 0.4), width: 1),
+              borderRadius: BorderRadius.circular(3),
             ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            clipBehavior: Clip.antiAlias,
+            child: _buildItemImage(imageUrl, itemType),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '#$queueUid · ${amount}x ${name.toString().toUpperCase()}',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: _panelBg,
+                        border: Border.all(color: statusColor, width: 0.8),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Text(
+                        statusLabel,
+                        style: GoogleFonts.shareTechMono(
+                          color: statusColor,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
                 Text(
-                  'TEMPO RESTANTE: ${_formatSeconds(remainingSec)}',
-                  style: GoogleFonts.shareTechMono(
-                    color: _cyanColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                  ),
+                  'LOCAL: ${stationName.toString().toUpperCase()}',
+                  style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 10),
                 ),
-                TextButton(
-                  onPressed: _isSubmitting ? null : () => _cancelCrafting(queueUid),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    minimumSize: const Size(0, 24),
+                const SizedBox(height: 5),
+                if (isInProgress && remainingSec > 0) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: const LinearProgressIndicator(
+                      backgroundColor: Colors.white12,
+                      color: _cyanColor,
+                      minHeight: 3.5,
+                    ),
                   ),
-                  child: Text(
-                    'CANCELAR',
-                    style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 10),
+                  const SizedBox(height: 5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'TEMPO RESTANTE: ${_formatSeconds(remainingSec)}',
+                        style: GoogleFonts.shareTechMono(
+                          color: _cyanColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _isSubmitting ? null : () => _cancelCrafting(queueUid),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          minimumSize: const Size(0, 22),
+                        ),
+                        child: Text(
+                          'CANCELAR',
+                          style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 9.5),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ] else if (isCompleted || remainingSec <= 0) ...[
+                  Text(
+                    '✓ Item concluído e entregue no estoque desta estação.',
+                    style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10),
+                  ),
+                ],
               ],
             ),
-          ] else if (isCompleted || remainingSec <= 0) ...[
-            Text(
-              '✓ Item concluído e entregue no estoque desta estação.',
-              style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10),
-            ),
-          ],
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildItemImage(String? rawUrl, int itemType) {
+    if (rawUrl != null && rawUrl.trim().isNotEmpty) {
+      final String fullUrl = rawUrl.startsWith('http')
+          ? rawUrl
+          : '${widget.apiBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}$rawUrl';
+      final Widget img = Image.network(
+        fullUrl,
+        fit: itemType == 6 ? BoxFit.contain : BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(itemType),
+      );
+      if (itemType == 6) {
+        return Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: img,
+        );
+      }
+      return img;
+    }
+    return _buildFallbackIcon(itemType);
+  }
+
+  Widget _buildFallbackIcon(int itemType) {
+    IconData iconData = Icons.category_outlined;
+    switch (itemType) {
+      case 1:
+        iconData = Icons.hexagon_outlined;
+        break;
+      case 2:
+        iconData = Icons.gps_fixed;
+        break;
+      case 3:
+        iconData = Icons.rocket_outlined;
+        break;
+      case 4:
+        iconData = Icons.memory_outlined;
+        break;
+      case 5:
+        iconData = Icons.bolt_outlined;
+        break;
+      case 6:
+        iconData = Icons.rocket_launch_outlined;
+        break;
+    }
+    return Center(
+      child: Icon(iconData, color: _cyanColor.withValues(alpha: 0.5), size: 26),
     );
   }
 }
