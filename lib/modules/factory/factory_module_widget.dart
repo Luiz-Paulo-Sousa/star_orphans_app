@@ -40,7 +40,8 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
   ];
 
   int _selectedSubTab = 0; // 0 = PROJETOS, 1 = FILA DE PRODUÇÃO
-  int _selectedItemType = 1; // Categoria padrão (Insumos/Matéria-prima)
+  int _selectedItemType = 6; // Categoria padrão: NAVES
+  bool _hasInitializedCategory = false;
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -121,13 +122,11 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
           _queue = List<Map<String, dynamic>>.from(queueData['queue'] ?? []);
           _isLoading = false;
 
-          // Se for fundição, seleciona automaticamente INSUMOS; se fábrica, se não tiver itens da categoria atual, busca a primeira com itens
-          if (stationType == 'fundicao') {
-            _selectedItemType = 1;
-          } else {
-            final hasCurrent = loadedRecipes.any((r) => r['item_type'] == _selectedItemType);
-            if (!hasCurrent && loadedRecipes.isNotEmpty) {
-              _selectedItemType = loadedRecipes.first['item_type'] ?? 1;
+          // Na carga inicial, fundição abre em INSUMOS; fábrica mantém NAVES como padrão
+          if (!_hasInitializedCategory) {
+            _hasInitializedCategory = true;
+            if (stationType == 'fundicao') {
+              _selectedItemType = 1;
             }
           }
         });
@@ -539,6 +538,62 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     );
   }
 
+  /// Exibe os cards em lista (1 coluna) em telas estreitas e em grade multi-colunas no Desktop.
+  Widget _buildResponsiveCardList({
+    required EdgeInsetsGeometry padding,
+    required int itemCount,
+    required Widget Function(int index, bool isGridItem) itemBuilder,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double spacing = 8.0;
+        const double minCardWidth = 340.0;
+        final EdgeInsets resolvedPadding =
+            padding.resolve(Directionality.of(context));
+        final double availableWidth =
+            (constraints.maxWidth - resolvedPadding.horizontal)
+                .clamp(0.0, double.infinity);
+        final int columns =
+            ((availableWidth + spacing) / (minCardWidth + spacing))
+                .floor()
+                .clamp(1, 5);
+
+        if (columns == 1) {
+          return ListView.builder(
+            padding: padding,
+            itemCount: itemCount,
+            itemBuilder: (context, index) => itemBuilder(index, false),
+          );
+        }
+
+        final int rowCount = (itemCount / columns).ceil();
+        return ListView.builder(
+          padding: padding,
+          itemCount: rowCount,
+          itemBuilder: (context, rowIndex) {
+            final int start = rowIndex * columns;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: spacing),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (int col = 0; col < columns; col++) ...[
+                    if (col > 0) const SizedBox(width: spacing),
+                    Expanded(
+                      child: (start + col) < itemCount
+                          ? itemBuilder(start + col, true)
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildRecipesView(bool isFoundry) {
     // Filtra pelo tipo de item selecionado
     final filtered = _recipes.where((r) => (r['item_type'] as int? ?? 1) == _selectedItemType).toList();
@@ -561,18 +616,16 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
       );
     }
 
-    return ListView.builder(
+    return _buildResponsiveCardList(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       itemCount: filtered.length,
-      itemBuilder: (context, index) {
-        final recipe = filtered[index];
-        return _buildRecipeCard(recipe);
-      },
+      itemBuilder: (index, isGridItem) =>
+          _buildRecipeCard(filtered[index], isGridItem: isGridItem),
     );
   }
 
   // Card do item com tamanho reduzido, botão no topo e imagem à esquerda
-  Widget _buildRecipeCard(Map<String, dynamic> recipe) {
+  Widget _buildRecipeCard(Map<String, dynamic> recipe, {bool isGridItem = false}) {
     final name = recipe['name'] ?? 'Item';
     final timeSec = recipe['craft_time'] ?? 60;
     final cost = recipe['cost'] ?? 0;
@@ -583,7 +636,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     final itemType = recipe['item_type'] as int? ?? 1;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 7),
+      margin: isGridItem ? EdgeInsets.zero : const EdgeInsets.only(bottom: 7),
       decoration: BoxDecoration(
         color: _cardBg,
         border: Border.all(
@@ -759,17 +812,15 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
       );
     }
 
-    return ListView.builder(
+    return _buildResponsiveCardList(
       padding: const EdgeInsets.all(10),
       itemCount: _queue.length,
-      itemBuilder: (context, index) {
-        final item = _queue[index];
-        return _buildQueueCard(item);
-      },
+      itemBuilder: (index, isGridItem) =>
+          _buildQueueCard(_queue[index], isGridItem: isGridItem),
     );
   }
 
-  Widget _buildQueueCard(Map<String, dynamic> item) {
+  Widget _buildQueueCard(Map<String, dynamic> item, {bool isGridItem = false}) {
     final queueUid = item['queue_uid'];
     final name = item['item_name'] ?? 'Item';
     final amount = item['amount'] ?? 1;
@@ -794,7 +845,7 @@ class _FactoryModuleWidgetState extends State<FactoryModuleWidget> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: isGridItem ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: _cardBg,
