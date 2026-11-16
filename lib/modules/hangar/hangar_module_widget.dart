@@ -605,7 +605,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 const Icon(Icons.rocket_launch_outlined, color: _cyanColor, size: 32),
                 const SizedBox(height: 10),
                 Text(
-                  _fleetErrorMessage ?? 'NENHUMA NAVE REGISTRADA PARA ESTE OPERADOR.',
+                  _fleetErrorMessage ?? 'NENHUMA NAVE ATRACADA NESTA ESTAÇÃO.',
                   style: GoogleFonts.shareTechMono(
                     color: Colors.white,
                     fontSize: 12,

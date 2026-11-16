@@ -40,6 +40,13 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   bool _isTransferring = false;
   String? _errorMessage;
 
+  String _activeTab = 'LOGÍSTICA LOCAL'; // 'LOGÍSTICA LOCAL' ou 'GESTÃO DE ATIVOS'
+
+  // Gestão de Ativos - Filtro por Estação
+  bool _isLoadingAssetStations = false;
+  List<Map<String, dynamic>> _assetStations = [];
+  int? _selectedAssetStationId; // null = 'TODAS'
+
   List<Map<String, dynamic>> _vessels = [];
   int _selectedShipIndex = 0;
 
@@ -61,6 +68,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   void initState() {
     super.initState();
     _fetchInventory();
+    _fetchAssetStations();
   }
 
   int _getPilotUid() {
@@ -196,6 +204,46 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Erro de conexão com o servidor: $e';
+      });
+    }
+  }
+
+  Future<void> _fetchAssetStations() async {
+    final int pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
+
+    setState(() {
+      _isLoadingAssetStations = true;
+    });
+
+    try {
+      final uri = Uri.parse(
+        '${widget.apiBaseUrl}/api/hangar/asset-stations/$pilotUid',
+      );
+      final response = await http.get(uri);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded['status'] == 'sucesso' && decoded['data'] is List) {
+          setState(() {
+            _assetStations =
+                (decoded['data'] as List)
+                    .map<Map<String, dynamic>>(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    )
+                    .toList();
+            _isLoadingAssetStations = false;
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar estações com ativos: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingAssetStations = false;
       });
     }
   }
@@ -461,52 +509,378 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. Seletor de Nave na Estação (com holograma 38x38 e volumes de carga)
-              _buildShipSelectorHeader(isWide: isWide),
+              // 0. Abas Superiores: LOGÍSTICA LOCAL vs GESTÃO DE ATIVOS
+              _buildTopTabBar(isWide: isWide),
               const SizedBox(height: 6),
 
-              // 2. Botões de Grupos de Itens (mesmo padrão do Mercado)
-              _buildGroupButtonsBar(isWide: isWide),
-              const SizedBox(height: 6),
+              if (_activeTab == 'LOGÍSTICA LOCAL') ...[
+                // 1. Seletor de Nave na Estação (com holograma 38x38 e volumes de carga)
+                _buildShipSelectorHeader(isWide: isWide),
+                const SizedBox(height: 6),
 
-              // 3. Mostruário Superior: Área de Carga da Nave
-              Expanded(
-                child: _buildShowcasePanel(
-                  title:
-                      'ÁREA DE CARGA DA NAVE (${_vessels[_selectedShipIndex]['name']})',
-                  subtitle:
-                      'LIVRE: ${_formatNumber(_vessels[_selectedShipIndex]['available_cargo_volume'])} m³ / MÁX: ${_formatNumber(_vessels[_selectedShipIndex]['max_cargo_volume'])} m³',
-                  items: _getShipItemsForType(_selectedItemType),
-                  sourceKey: 'SHIP',
-                  accentColor: _greenAccent,
-                  emptyMessage:
-                      'Nenhum item deste grupo na área de carga desta nave.',
+                // 2. Botões de Grupos de Itens (mesmo padrão do Mercado)
+                _buildGroupButtonsBar(isWide: isWide),
+                const SizedBox(height: 6),
+
+                // 3. Mostruário Superior: Área de Carga da Nave
+                Expanded(
+                  child: _buildShowcasePanel(
+                    title:
+                        'ÁREA DE CARGA DA NAVE (${_vessels[_selectedShipIndex]['name']})',
+                    subtitle:
+                        'LIVRE: ${_formatNumber(_vessels[_selectedShipIndex]['available_cargo_volume'])} m³ / MÁX: ${_formatNumber(_vessels[_selectedShipIndex]['max_cargo_volume'])} m³',
+                    items: _getShipItemsForType(_selectedItemType),
+                    sourceKey: 'SHIP',
+                    accentColor: _greenAccent,
+                    emptyMessage:
+                        'Nenhum item deste grupo na área de carga desta nave.',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
+                const SizedBox(height: 6),
 
-              // 4. Barra Central: [PARA A NAVE]  [- QTD +]  [PARA A ESTAÇÃO]
-              _buildTransferControlBar(isWide: isWide),
-              const SizedBox(height: 6),
+                // 4. Barra Central: [PARA A NAVE]  [- QTD +]  [PARA A ESTAÇÃO]
+                _buildTransferControlBar(isWide: isWide),
+                const SizedBox(height: 6),
 
-              // 5. Mostruário Inferior: Depósito da Estação
-              Expanded(
-                child: _buildShowcasePanel(
-                  title:
-                      'DEPÓSITO DA ESTAÇÃO (${_stationData['station_name']})',
-                  subtitle:
-                      'OCUPADO: ${_formatNumber(_stationData['used_volume'])} / ${_formatNumber(_stationData['max_volume'])} m³ (LIVRE: ${_formatNumber(_stationData['available_volume'])} m³)',
-                  items: _getStationItemsForType(_selectedItemType),
-                  sourceKey: 'STATION',
-                  accentColor: _cyanColor,
-                  emptyMessage:
-                      'Nenhum item deste grupo no seu depósito desta estação.',
+                // 5. Mostruário Inferior: Depósito da Estação
+                Expanded(
+                  child: _buildShowcasePanel(
+                    title:
+                        'DEPÓSITO DA ESTAÇÃO (${_stationData['station_name']})',
+                    subtitle:
+                        'OCUPADO: ${_formatNumber(_stationData['used_volume'])} / ${_formatNumber(_stationData['max_volume'])} m³ (LIVRE: ${_formatNumber(_stationData['available_volume'])} m³)',
+                    items: _getStationItemsForType(_selectedItemType),
+                    sourceKey: 'STATION',
+                    accentColor: _cyanColor,
+                    emptyMessage:
+                        'Nenhum item deste grupo no seu depósito desta estação.',
+                  ),
                 ),
-              ),
+              ] else ...[
+                // GESTÃO DE ATIVOS (Visão Global)
+                Expanded(
+                  child: _buildAssetManagementTab(isWide: isWide),
+                ),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  // ===========================================================================
+  // 0. ABAS SUPERIORES (LOGÍSTICA LOCAL VS GESTÃO DE ATIVOS)
+  // ===========================================================================
+  Widget _buildTopTabBar({required bool isWide}) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildTopTabButton(
+            label: 'LOGÍSTICA LOCAL',
+            icon: Icons.swap_horiz_rounded,
+            isSelected: _activeTab == 'LOGÍSTICA LOCAL',
+            onTap: () => setState(() => _activeTab = 'LOGÍSTICA LOCAL'),
+            isWide: isWide,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: _buildTopTabButton(
+            label: 'GESTÃO DE ATIVOS',
+            icon: Icons.travel_explore_rounded,
+            isSelected: _activeTab == 'GESTÃO DE ATIVOS',
+            onTap: () {
+              setState(() => _activeTab = 'GESTÃO DE ATIVOS');
+              if (_assetStations.isEmpty) _fetchAssetStations();
+            },
+            isWide: isWide,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopTabButton({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required bool isWide,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _cyanColor.withValues(alpha: 0.15) : _panelBg,
+          border: Border.all(
+            color: isSelected ? _greenAccent : _cyanColor.withValues(alpha: 0.4),
+            width: isSelected ? 1.5 : 1.0,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? _greenAccent : Colors.white70,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.shareTechMono(
+                color: isSelected ? _greenAccent : Colors.white,
+                fontSize: isWide ? 11 : 10,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssetManagementTab({required bool isWide}) {
+    final String currentStationLabel = _selectedAssetStationId == null
+        ? 'TODAS AS ESTAÇÕES'
+        : (_assetStations.firstWhere(
+            (s) => s['id'] == _selectedAssetStationId,
+            orElse: () => {'name': 'ESTAÇÃO DESCONHECIDA'},
+          )['name'] ??
+          'ESTAÇÃO');
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(
+          color: _cyanColor.withValues(alpha: 0.55),
+          width: 1.2,
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 1. Barra de Filtro de Estação (Top Filter)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1117),
+              border: Border.all(
+                color: _cyanColor.withValues(alpha: 0.6),
+                width: 1.0,
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.filter_alt_outlined,
+                  color: _cyanColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'ESTAÇÃO:',
+                  style: GoogleFonts.shareTechMono(
+                    color: _cyanColor,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 29,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: _cardBg,
+                      border: Border.all(
+                        color:
+                            _selectedAssetStationId != null
+                                ? _greenAccent
+                                : _cyanColor.withValues(alpha: 0.7),
+                        width: 1.0,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int?>(
+                        value: _selectedAssetStationId,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF10141D),
+                        icon: const Icon(
+                          Icons.arrow_drop_down,
+                          color: _cyanColor,
+                          size: 20,
+                        ),
+                        style: GoogleFonts.shareTechMono(
+                          color:
+                              _selectedAssetStationId != null
+                                  ? _greenAccent
+                                  : Colors.white,
+                          fontSize: isWide ? 11.5 : 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        items: [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text(
+                              'TODAS (${_assetStations.length})',
+                              style: GoogleFonts.shareTechMono(
+                                color:
+                                    _selectedAssetStationId == null
+                                        ? _greenAccent
+                                        : Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          ..._assetStations.map((st) {
+                            final int id = (st['id'] as num).toInt();
+                            final String name = st['name'].toString();
+                            return DropdownMenuItem<int?>(
+                              value: id,
+                              child: Text(
+                                name,
+                                style: GoogleFonts.shareTechMono(
+                                  color:
+                                      _selectedAssetStationId == id
+                                          ? _greenAccent
+                                          : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedAssetStationId = val;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon:
+                      _isLoadingAssetStations
+                          ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _cyanColor,
+                            ),
+                          )
+                          : const Icon(
+                            Icons.refresh,
+                            color: _cyanColor,
+                            size: 18,
+                          ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  tooltip: 'Recarregar estações com ativos',
+                  onPressed:
+                      _isLoadingAssetStations ? null : _fetchAssetStations,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 2. Área Central: Visualização do Passo 1
+          Expanded(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1117),
+                  border: Border.all(
+                    color: _cyanColor.withValues(alpha: 0.3),
+                    width: 1.0,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.hub_outlined,
+                      color: _greenAccent,
+                      size: 38,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'GESTÃO DE ATIVOS // PASSO 1 CONCLUÍDO',
+                      style: GoogleFonts.shareTechMono(
+                        color: _greenAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'FILTRO ATIVO: $currentStationLabel',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${_assetStations.length} estação(ões) identificada(s) com itens do piloto na base orbit_stations.',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white70,
+                        fontSize: 10.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _cyanColor.withValues(alpha: 0.12),
+                        border: Border.all(
+                          color: _cyanColor.withValues(alpha: 0.6),
+                          width: 1,
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        'PRONTO PARA O PRÓXIMO PASSO',
+                        style: GoogleFonts.shareTechMono(
+                          color: _cyanColor,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -801,10 +1175,10 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     : GridView.builder(
                       gridDelegate:
                           const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 145,
-                            mainAxisExtent: 155,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
+                            maxCrossAxisExtent: 116,
+                            mainAxisExtent: 124,
+                            crossAxisSpacing: 6,
+                            mainAxisSpacing: 6,
                           ),
                       itemCount: items.length,
                       itemBuilder: (context, index) {
@@ -834,7 +1208,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           },
                           borderRadius: BorderRadius.circular(4),
                           child: Container(
-                            padding: const EdgeInsets.all(6),
+                            padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
                               color:
                                   isSelected
@@ -870,12 +1244,12 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                                         ),
                                       ),
                                       Positioned(
-                                        right: 4,
-                                        bottom: 4,
+                                        right: 3,
+                                        bottom: 3,
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 2,
+                                            horizontal: 4,
+                                            vertical: 1.5,
                                           ),
                                           decoration: BoxDecoration(
                                             color: Colors.black.withValues(
@@ -893,7 +1267,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                                             'QTD: $amount',
                                             style: GoogleFonts.shareTechMono(
                                               color: accentColor,
-                                              fontSize: 8.5,
+                                              fontSize: 8,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -902,7 +1276,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(height: 5),
+                                const SizedBox(height: 3),
 
                                 // Nome do Item
                                 Text(
@@ -912,14 +1286,14 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                                         isSelected
                                             ? accentColor
                                             : Colors.white,
-                                    fontSize: 10,
+                                    fontSize: 9.5,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   textAlign: TextAlign.center,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 1.5),
 
                                 // Volume unitário e Volume total ocupado pelo lote
                                 Row(
@@ -930,14 +1304,14 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                                       'Un: ${unitVol}m³',
                                       style: GoogleFonts.shareTechMono(
                                         color: Colors.white54,
-                                        fontSize: 8.5,
+                                        fontSize: 8,
                                       ),
                                     ),
                                     Text(
                                       'Tot: ${totalVol}m³',
                                       style: GoogleFonts.shareTechMono(
                                         color: _cyanColor,
-                                        fontSize: 8.5,
+                                        fontSize: 8,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -1004,10 +1378,6 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
 
     final Color qtyTextColor =
         (exceedsShipVolume || exceedsStationVolume) ? _redAccent : Colors.white;
-    final Color volSubTextColor =
-        (exceedsShipVolume || exceedsStationVolume)
-            ? _redAccent
-            : _cyanColor;
 
     final Color toShipTextColor =
         canMoveToShip
@@ -1019,7 +1389,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             : (exceedsStationVolume ? _redAccent : Colors.white24);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: _panelBg,
         border: Border.all(color: _cyanColor.withValues(alpha: 0.6), width: 1.2),
@@ -1030,14 +1400,14 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
           // Botão Esquerdo: PARA A NAVE (Seta para cima)
           Expanded(
             child: SizedBox(
-              height: isWide ? 42 : 46,
+              height: isWide ? 28 : 30,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _greenAccent,
                   disabledBackgroundColor: Colors.white12,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 6,
+                    vertical: 0,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
@@ -1054,40 +1424,23 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     canMoveToShip ? () => _handleTransfer('TO_SHIP') : null,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Column(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.arrow_upward_rounded,
-                            color: toShipTextColor,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'PARA A NAVE',
-                            style: GoogleFonts.shareTechMono(
-                              color: toShipTextColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      Icon(
+                        Icons.arrow_upward_rounded,
+                        color: toShipTextColor,
+                        size: 14,
                       ),
-                      if (isStationItemSelected)
-                        Text(
-                          exceedsShipVolume
-                              ? 'SEM ESPAÇO (${_formatNumber(selectedTotalVolume)} m³)'
-                              : '+${_formatNumber(selectedTotalVolume)} m³',
-                          style: GoogleFonts.shareTechMono(
-                            color: toShipTextColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      const SizedBox(width: 4),
+                      Text(
+                        exceedsShipVolume ? 'SEM ESPAÇO' : 'PARA A NAVE',
+                        style: GoogleFonts.shareTechMono(
+                          color: toShipTextColor,
+                          fontSize: isWide ? 11 : 10,
+                          fontWeight: FontWeight.bold,
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -1095,12 +1448,12 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             ),
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
           // Seletor Central de Quantidade (- QTD +)
           Container(
-            height: isWide ? 42 : 46,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            height: isWide ? 28 : 30,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: _cardBg,
               border: Border.all(
@@ -1123,8 +1476,8 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           : null,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 8,
+                      horizontal: 4,
+                      vertical: 4,
                     ),
                     child: Icon(
                       Icons.remove,
@@ -1132,32 +1485,19 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           selectedItem != null && _quantity > 1
                               ? _cyanColor
                               : Colors.white24,
-                      size: 16,
+                      size: 14,
                     ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'QTD: $_quantity',
-                        style: GoogleFonts.shareTechMono(
-                          color: qtyTextColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '${_formatNumber(selectedTotalVolume)} m³',
-                        style: GoogleFonts.shareTechMono(
-                          color: volSubTextColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'QTD: $_quantity',
+                    style: GoogleFonts.shareTechMono(
+                      color: qtyTextColor,
+                      fontSize: isWide ? 11 : 10.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 InkWell(
@@ -1167,8 +1507,8 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           : null,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 8,
+                      horizontal: 4,
+                      vertical: 4,
                     ),
                     child: Icon(
                       Icons.add,
@@ -1176,7 +1516,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           selectedItem != null && _quantity < maxItemAmount
                               ? _cyanColor
                               : Colors.white24,
-                      size: 16,
+                      size: 14,
                     ),
                   ),
                 ),
@@ -1184,22 +1524,29 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             ),
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
           // Botão Direito: PARA A ESTAÇÃO (Seta para baixo)
           Expanded(
             child: SizedBox(
-              height: isWide ? 42 : 46,
+              height: isWide ? 28 : 30,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cyanColor,
                   disabledBackgroundColor: Colors.white12,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 6,
+                    vertical: 0,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
+                    side:
+                        exceedsStationVolume
+                            ? BorderSide(
+                              color: _redAccent.withValues(alpha: 0.6),
+                              width: 1.0,
+                            )
+                            : BorderSide.none,
                   ),
                 ),
                 onPressed:
@@ -1208,38 +1555,23 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                         : null,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Column(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.arrow_downward_rounded,
-                            color: toStationTextColor,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'PARA A ESTAÇÃO',
-                            style: GoogleFonts.shareTechMono(
-                              color: toStationTextColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      Icon(
+                        Icons.arrow_downward_rounded,
+                        color: toStationTextColor,
+                        size: 14,
                       ),
-                      if (isShipItemSelected)
-                        Text(
-                          '+${_formatNumber(selectedTotalVolume)} m³',
-                          style: GoogleFonts.shareTechMono(
-                            color: toStationTextColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      const SizedBox(width: 4),
+                      Text(
+                        exceedsStationVolume ? 'SEM ESPAÇO' : 'PARA A ESTAÇÃO',
+                        style: GoogleFonts.shareTechMono(
+                          color: toStationTextColor,
+                          fontSize: isWide ? 11 : 10,
+                          fontWeight: FontWeight.bold,
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -1287,7 +1619,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
         break;
     }
     return Center(
-      child: Icon(iconData, color: _cyanColor.withValues(alpha: 0.5), size: 32),
+      child: Icon(iconData, color: _cyanColor.withValues(alpha: 0.5), size: 26),
     );
   }
 }
