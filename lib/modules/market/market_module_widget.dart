@@ -50,6 +50,7 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
   int? _selectedItemCode;
   int _selectedOwnerPilotUid = 0;
   int _quantity = 1;
+  bool _isPropertiesCollapsed = false;
 
   @override
   void initState() {
@@ -549,19 +550,28 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. JANELA DE PROPRIEDADES DO ITEM SELECIONADO (IMAGEM 128x128 + ATRIBUTOS)
-              _buildPropertiesWindow(isWide: isWide),
-              const SizedBox(height: 8),
-
-              // 2. BOTÕES DOS GRUPOS + FILTRO DE PROPRIETÁRIO (ESTAÇÃO / PILOTOS)
-              _buildGroupButtonsBar(isWide: isWide),
-              const SizedBox(height: 8),
-
-              // 3. GRADE DE ITENS DO GRUPO SELECIONADO (COM IMAGENS 128x128 E BORDA VERDE NO SELECIONADO)
               Expanded(
-                child: _buildItemsGrid(isWide: isWide),
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 1. JANELA DE PROPRIEDADES DO ITEM SELECIONADO (IMAGEM 128x128 + ATRIBUTOS)
+                      _buildPropertiesWindow(isWide: isWide),
+                      const SizedBox(height: 8),
+
+                      // 2. BOTÕES DOS GRUPOS + FILTRO DE PROPRIETÁRIO (ESTAÇÃO / PILOTOS)
+                      _buildGroupButtonsBar(isWide: isWide),
+                      const SizedBox(height: 8),
+
+                      // 3. GRADE DE ITENS DO GRUPO SELECIONADO (COM IMAGENS 128x128 E BORDA VERDE NO SELECIONADO)
+                      _buildItemsGrid(isWide: isWide),
+                      const SizedBox(height: 6),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
 
               // 4. BARRA INFERIOR DE AÇÃO: COMPRAR E VENDER (-20% DESÁGIO) + ANUNCIAR
               _buildBottomActionBar(isWide: isWide),
@@ -595,6 +605,14 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
     final String ownerName = (item['owner_name'] ?? 'ESTAÇÃO COMERCIAL').toString().toUpperCase();
     final int plStock = (item['player_stock'] as num?)?.toInt() ?? 0;
     final bool canAnnounce = !_isProcessingAction && plStock > 0 && _quantity <= plStock;
+
+    if (_isPropertiesCollapsed) {
+      return _buildCompactPropertiesWindow(
+        item: item,
+        isPilotAd: isPilotAd,
+        isWide: isWide,
+      );
+    }
 
     final List<Map<String, String>> propertyCells = [
       {
@@ -814,53 +832,88 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Linha 1: Nome + Código + Proprietário
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                // Linha 1: Nome + Código + Proprietário + Botão Recolher
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      (item['name'] ?? 'ITEM').toString().toUpperCase(),
-                      style: GoogleFonts.shareTechMono(
-                        color: _greenAccent,
-                        fontSize: isWide ? 15 : 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.1,
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            (item['name'] ?? 'ITEM').toString().toUpperCase(),
+                            style: GoogleFonts.shareTechMono(
+                              color: _greenAccent,
+                              fontSize: isWide ? 15 : 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: Text(
+                              'CÓD: ${item['item_code_formatted']} · ${(item['group_name'] ?? '').toString().toUpperCase()}',
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.white70,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: isPilotAd
+                                  ? _amberAccent.withValues(alpha: 0.15)
+                                  : _cyanColor.withValues(alpha: 0.12),
+                              border: Border.all(
+                                color: isPilotAd ? _amberAccent : _cyanColor.withValues(alpha: 0.6),
+                                width: 0.8,
+                              ),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: Text(
+                              'PROPRIETÁRIO: $ownerName',
+                              style: GoogleFonts.shareTechMono(
+                                color: isPilotAd ? _amberAccent : _cyanColor,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: Text(
-                        'CÓD: ${item['item_code_formatted']} · ${(item['group_name'] ?? '').toString().toUpperCase()}',
-                        style: GoogleFonts.shareTechMono(
-                          color: Colors.white70,
-                          fontSize: 9,
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => setState(() => _isPropertiesCollapsed = true),
+                      borderRadius: BorderRadius.circular(3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          border: Border.all(color: _cyanColor.withValues(alpha: 0.5), width: 0.8),
+                          borderRadius: BorderRadius.circular(3),
                         ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: isPilotAd
-                            ? _amberAccent.withValues(alpha: 0.15)
-                            : _cyanColor.withValues(alpha: 0.12),
-                        border: Border.all(
-                          color: isPilotAd ? _amberAccent : _cyanColor.withValues(alpha: 0.6),
-                          width: 0.8,
-                        ),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: Text(
-                        'PROPRIETÁRIO: $ownerName',
-                        style: GoogleFonts.shareTechMono(
-                          color: isPilotAd ? _amberAccent : _cyanColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'RECOLHER',
+                              style: GoogleFonts.shareTechMono(
+                                color: _cyanColor,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.keyboard_arrow_up, color: _cyanColor, size: 13),
+                          ],
                         ),
                       ),
                     ),
@@ -935,6 +988,166 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
                   }).toList(),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactPropertiesWindow({
+    required Map<String, dynamic> item,
+    required bool isPilotAd,
+    required bool isWide,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _cyanColor, width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          // Mini thumbnail
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0E14),
+              border: Border.all(color: _greenAccent, width: 1.5),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: _buildItemImage(
+                item['image_url']?.toString(),
+                item['item_type'] as int? ?? 1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Nome e Informações resumidas
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        (item['name'] ?? 'ITEM').toString().toUpperCase(),
+                        style: GoogleFonts.shareTechMono(
+                          color: _greenAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_formatCredits(item['buy_price'])} CR',
+                      style: GoogleFonts.shareTechMono(
+                        color: _cyanColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'OFERTA: ${item['station_stock'] ?? 0} un. · DEPÓSITO: ${item['player_stock'] ?? 0} un.',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white70,
+                    fontSize: 9,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+
+          // Seletor de Quantidade compacto (- QTD +)
+          Container(
+            height: 28,
+            decoration: BoxDecoration(
+              color: _cardBg,
+              border: Border.all(color: _cyanColor.withValues(alpha: 0.65)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: _quantity > 1 ? () => setState(() => _quantity--) : null,
+                  child: SizedBox(
+                    width: 24,
+                    height: 28,
+                    child: Icon(
+                      Icons.remove,
+                      color: _quantity > 1 ? _cyanColor : Colors.white24,
+                      size: 13,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'QTD: $_quantity',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => setState(() => _quantity++),
+                  child: const SizedBox(
+                    width: 24,
+                    height: 28,
+                    child: Icon(
+                      Icons.add,
+                      color: _cyanColor,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Botão Expandir Detalhes
+          InkWell(
+            onTap: () => setState(() => _isPropertiesCollapsed = false),
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                border: Border.all(color: _cyanColor.withValues(alpha: 0.5), width: 0.8),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'DETALHES',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(Icons.keyboard_arrow_down, color: _cyanColor, size: 14),
+                ],
+              ),
             ),
           ),
         ],
@@ -1064,6 +1277,7 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
 
     if (items.isEmpty) {
       return Container(
+        height: 120,
         decoration: BoxDecoration(
           color: _panelBg,
           border: Border.all(color: _cyanColor.withValues(alpha: 0.4)),
@@ -1088,6 +1302,8 @@ class _MarketModuleWidgetState extends State<MarketModuleWidget> {
         borderRadius: BorderRadius.circular(4),
       ),
       child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: isWide ? 160 : 135,
           mainAxisSpacing: 8,
