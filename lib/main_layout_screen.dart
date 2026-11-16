@@ -11,6 +11,7 @@ import 'modules/hangar/hangar_module_widget.dart';
 import 'modules/market/market_module_widget.dart';
 import 'modules/inventory/inventory_module_widget.dart';
 import 'modules/factory/factory_module_widget.dart';
+import 'modules/contracts/contracts_module_widget.dart';
 import 'services/notification_websocket_service.dart';
 
 class MainLayoutScreen extends StatefulWidget {
@@ -487,7 +488,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           apiBaseUrl: widget.apiBaseUrl,
         );
       case 3:
-        return _buildPlaceholderScreen('QUADRO DE CONTRATOS E MISSÕES');
+        return ContractsModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+          onProfileRefresh: _refreshProfileData,
+        );
       case 4:
         return MarketModuleWidget(
           profileData: _currentProfileData,

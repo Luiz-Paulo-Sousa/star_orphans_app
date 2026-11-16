@@ -2150,6 +2150,28 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 ),
                 child: Row(
                   children: [
+                    // Miniatura do Equipamento no Catálogo
+                    Container(
+                      width: 44,
+                      height: 44,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A0D12),
+                        border: Border.all(
+                          color: isSel ? _cyanColor : Colors.white24,
+                          width: isSel ? 1.4 : 0.8,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: _buildItemImage(
+                          item['image_url']?.toString(),
+                          (item['item_type'] as num?)?.toInt() ??
+                              _itemTypeForCategory(_selectedLoadoutCategory),
+                        ),
+                      ),
+                    ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2272,6 +2294,62 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
         ),
       ],
     );
+  }
+
+  Widget _buildItemImage(String? rawUrl, int itemType) {
+    if (rawUrl != null && rawUrl.trim().isNotEmpty) {
+      final String fullUrl = rawUrl.startsWith('http')
+          ? rawUrl
+          : '${widget.apiBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}$rawUrl';
+      return Image.network(
+        fullUrl,
+        fit: itemType == 6 ? BoxFit.contain : BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(itemType),
+      );
+    }
+    return _buildFallbackIcon(itemType);
+  }
+
+  Widget _buildFallbackIcon(int itemType) {
+    IconData iconData = Icons.category_outlined;
+    switch (itemType) {
+      case 1:
+        iconData = Icons.hexagon_outlined;
+        break;
+      case 2:
+        iconData = Icons.gps_fixed;
+        break;
+      case 3:
+        iconData = Icons.rocket_outlined;
+        break;
+      case 4:
+        iconData = Icons.memory_outlined;
+        break;
+      case 5:
+        iconData = Icons.bolt_outlined;
+        break;
+      case 6:
+        iconData = Icons.rocket_launch_outlined;
+        break;
+    }
+    return Center(
+      child: Icon(iconData, color: _cyanColor.withValues(alpha: 0.5), size: 22),
+    );
+  }
+
+  int _itemTypeForCategory(String category) {
+    switch (category) {
+      case 'CANHÕES':
+        return 2;
+      case 'MÍSSEIS':
+        return 3;
+      case 'DISPOSITIVOS':
+        return 4;
+      case 'UTILITÁRIOS':
+        return 5;
+      default:
+        return 1;
+    }
   }
 
   Map<String, dynamic>? _getSelectedHardpointSlotData() {
@@ -2421,19 +2499,49 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'ATUAL ($slotIdLabel)',
-                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 8),
+                    Row(
+                      children: [
+                        if (!isSlotFree)
+                          Container(
+                            width: 32,
+                            height: 32,
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0A0D12),
+                              border: Border.all(color: Colors.white24, width: 0.8),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: _buildItemImage(
+                                currentSlot?['image_url']?.toString(),
+                                _itemTypeForCategory(_selectedLoadoutCategory),
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'ATUAL ($slotIdLabel)',
+                                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 8),
+                              ),
+                              Text(
+                                currentName,
+                                style: GoogleFonts.shareTechMono(
+                                  color: isSlotFree ? Colors.white38 : Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      currentName,
-                      style: GoogleFonts.shareTechMono(
-                        color: isSlotFree ? Colors.white38 : Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    const SizedBox(height: 4),
                     ...leftSpecs,
                   ],
                 ),
@@ -2453,22 +2561,53 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      selInStock ? 'SELECIONADO (ESTOQUE)' : 'SELECIONADO (MERCADO)',
-                      style: GoogleFonts.shareTechMono(
-                        color: selInStock ? _cyanColor : _amberAccent,
-                        fontSize: 8,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                selInStock ? 'SELECIONADO (ESTOQUE)' : 'SELECIONADO (MERCADO)',
+                                style: GoogleFonts.shareTechMono(
+                                  color: selInStock ? _cyanColor : _amberAccent,
+                                  fontSize: 8,
+                                ),
+                              ),
+                              Text(
+                                selectedItem['name'].toString(),
+                                style: GoogleFonts.shareTechMono(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          margin: const EdgeInsets.only(left: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0A0D12),
+                            border: Border.all(color: _cyanColor, width: 0.8),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: _buildItemImage(
+                              selectedItem['image_url']?.toString(),
+                              (selectedItem['item_type'] as num?)?.toInt() ??
+                                  _itemTypeForCategory(_selectedLoadoutCategory),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      selectedItem['name'].toString(),
-                      style: GoogleFonts.shareTechMono(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    const SizedBox(height: 4),
                     ...rightSpecs,
                   ],
                 ),
