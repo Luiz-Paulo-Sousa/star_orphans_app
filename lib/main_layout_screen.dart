@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'player_profile_screen.dart';
@@ -37,6 +38,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   bool _isUploadingAvatar = false;
   late int _avatarCacheBuster;
   Timer? _unreadSyncTimer;
+  late final ScrollController _bottomNavScrollController;
 
   late Map<String, dynamic> _currentProfileData;
 
@@ -47,6 +49,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   @override
   void initState() {
     super.initState();
+    _bottomNavScrollController = ScrollController();
     _currentProfileData = Map<String, dynamic>.from(widget.profileData);
     _avatarCacheBuster = DateTime.now().millisecondsSinceEpoch;
     _initRealtimeConnection();
@@ -60,6 +63,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   @override
   void dispose() {
     _unreadSyncTimer?.cancel();
+    _bottomNavScrollController.dispose();
     super.dispose();
   }
 
@@ -395,6 +399,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                         _selectedIndex = 1;
                         _hasUnreadChat = false;
                       });
+                      _scrollToIndex(1);
                     },
                     child: const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4.0),
@@ -414,6 +419,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                         _selectedIndex = 1;
                         _hasUnreadEmail = false;
                       });
+                      _scrollToIndex(1);
                     },
                     child: const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4.0),
@@ -511,9 +517,40 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           apiBaseUrl: widget.apiBaseUrl,
           onProfileRefresh: _refreshProfileData,
         );
+      case 7:
+        return _buildPlaceholderScreen('CORPORAÇÕES');
       default:
         return _buildPlaceholderScreen('TELA DESCONHECIDA');
     }
+  }
+
+  void _scrollToIndex(int index) {
+    if (!_bottomNavScrollController.hasClients) return;
+    const double itemWidth = 81.0;
+    final double screenW = MediaQuery.of(context).size.width;
+    final double targetOffset =
+        (index * itemWidth) + (itemWidth / 2) - (screenW / 2);
+    _bottomNavScrollController.animateTo(
+      targetOffset.clamp(
+        0.0,
+        _bottomNavScrollController.position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _scrollByDelta(double delta) {
+    if (!_bottomNavScrollController.hasClients) return;
+    final double target = (_bottomNavScrollController.offset + delta).clamp(
+      0.0,
+      _bottomNavScrollController.position.maxScrollExtent,
+    );
+    _bottomNavScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   Widget _buildPlaceholderScreen(String title) {
@@ -569,58 +606,320 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
       {'label': 'MERCADO', 'icon': Icons.candlestick_chart_outlined},
       {'label': 'ESTOQUE', 'icon': Icons.inventory_2_outlined},
       {'label': 'FÁBRICA', 'icon': Icons.precision_manufacturing_outlined},
+      {'label': 'CORPORAÇÃO', 'icon': Icons.corporate_fare_outlined},
     ];
 
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      color: _darkBg,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: List.generate(tabs.length, (index) {
-          final isSelected = index == _selectedIndex;
-          final tab = tabs[index];
-          return Expanded(
-            child: InkWell(
-              onTap: () {
-                setState(() {
-                  _selectedIndex = index;
-                });
-                _checkUnreadMessagesOnStartup();
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isSelected ? Colors.greenAccent : _cyanColor,
-                    width: isSelected ? 2.0 : 1.0,
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      tab['icon'] as IconData,
-                      size: 16,
-                      color: isSelected ? Colors.greenAccent : _cyanColor,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      tab['label'] as String,
-                      style: GoogleFonts.shareTechMono(
-                        color: isSelected ? Colors.greenAccent : Colors.white,
-                        fontSize: 9,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 8 botões precisam de ~76px cada para caber com folga e respiro = ~640px
+        final bool canFitAll = constraints.maxWidth >= 640;
+
+        if (canFitAll) {
+          // ===================================================================
+          // MODO WIDE (Desktop / Notebook / Janela Larga):
+          // Todos os botões ocupam a largura total de forma expansiva e simétrica!
+          // ===================================================================
+          return Container(
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            decoration: BoxDecoration(
+              color: _darkBg,
+              border: Border(
+                top: BorderSide(
+                  color: _cyanColor.withValues(alpha: 0.35),
+                  width: 1.0,
                 ),
               ),
             ),
+            child: Row(
+              children: List.generate(tabs.length, (index) {
+                final isSelected = index == _selectedIndex;
+                final tab = tabs[index];
+                final bool hasUnread =
+                    index == 1 && (_hasUnreadChat || _hasUnreadEmail);
+
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedIndex = index;
+                        });
+                        _checkUnreadMessagesOnStartup();
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color:
+                              isSelected
+                                  ? Colors.greenAccent.withValues(alpha: 0.14)
+                                  : _panelBg,
+                          border: Border.all(
+                            color:
+                                isSelected
+                                    ? Colors.greenAccent
+                                    : _cyanColor.withValues(alpha: 0.55),
+                            width: isSelected ? 1.8 : 1.0,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  tab['icon'] as IconData,
+                                  size: 16,
+                                  color:
+                                      isSelected
+                                          ? Colors.greenAccent
+                                          : _cyanColor,
+                                ),
+                                const SizedBox(height: 3),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                  ),
+                                  child: Text(
+                                    tab['label'] as String,
+                                    style: GoogleFonts.shareTechMono(
+                                      color:
+                                          isSelected
+                                              ? Colors.greenAccent
+                                              : Colors.white,
+                                      fontSize: 9,
+                                      fontWeight:
+                                          isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (hasUnread)
+                              Positioned(
+                                top: 4,
+                                right: 6,
+                                child: Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFF3333),
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color(0xFFFF3333),
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
           );
-        }),
-      ),
+        }
+
+        // =====================================================================
+        // MODO NARROW (Celular / Janela Estreita):
+        // Carrossel horizontal deslizável com setas laterais e botões de 76px!
+        // =====================================================================
+        return Container(
+          height: 60,
+          decoration: BoxDecoration(
+            color: _darkBg,
+            border: Border(
+              top: BorderSide(
+                color: _cyanColor.withValues(alpha: 0.35),
+                width: 1.0,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Seta esquerda do carrossel
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _scrollByDelta(-160),
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    width: 24,
+                    height: double.infinity,
+                    child: Center(
+                      child: Icon(
+                        Icons.chevron_left_rounded,
+                        color: _cyanColor.withValues(alpha: 0.85),
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Área rolável do carrossel
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.stylus,
+                    },
+                  ),
+                  child: ListView.builder(
+                    controller: _bottomNavScrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 5,
+                    ),
+                    itemCount: tabs.length,
+                    itemBuilder: (context, index) {
+                      final isSelected = index == _selectedIndex;
+                      final tab = tabs[index];
+                      final bool hasUnread =
+                          index == 1 && (_hasUnreadChat || _hasUnreadEmail);
+
+                      return Container(
+                        width: 76,
+                        margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedIndex = index;
+                            });
+                            _scrollToIndex(index);
+                            _checkUnreadMessagesOnStartup();
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color:
+                                  isSelected
+                                      ? Colors.greenAccent.withValues(
+                                        alpha: 0.14,
+                                      )
+                                      : _panelBg,
+                              border: Border.all(
+                                color:
+                                    isSelected
+                                        ? Colors.greenAccent
+                                        : _cyanColor.withValues(alpha: 0.55),
+                                width: isSelected ? 1.8 : 1.0,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              alignment: Alignment.center,
+                              children: [
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      tab['icon'] as IconData,
+                                      size: 16,
+                                      color:
+                                          isSelected
+                                              ? Colors.greenAccent
+                                              : _cyanColor,
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 2,
+                                      ),
+                                      child: Text(
+                                        tab['label'] as String,
+                                        style: GoogleFonts.shareTechMono(
+                                          color:
+                                              isSelected
+                                                  ? Colors.greenAccent
+                                                  : Colors.white,
+                                          fontSize: 8.5,
+                                          fontWeight:
+                                              isSelected
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (hasUnread)
+                                  Positioned(
+                                    top: 4,
+                                    right: 6,
+                                    child: Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFFF3333),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Color(0xFFFF3333),
+                                            blurRadius: 4,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // Seta direita do carrossel
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _scrollByDelta(160),
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    width: 24,
+                    height: double.infinity,
+                    child: Center(
+                      child: Icon(
+                        Icons.chevron_right_rounded,
+                        color: _cyanColor.withValues(alpha: 0.85),
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
