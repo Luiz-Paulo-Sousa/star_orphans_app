@@ -42,10 +42,15 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
 
   String _activeTab = 'LOGÍSTICA LOCAL'; // 'LOGÍSTICA LOCAL' ou 'GESTÃO DE ATIVOS'
 
-  // Gestão de Ativos - Filtro por Estação
+  // Gestão de Ativos - Estado
   bool _isLoadingAssetStations = false;
   List<Map<String, dynamic>> _assetStations = [];
   int? _selectedAssetStationId; // null = 'TODAS'
+  bool _isLoadingAssets = false;
+  List<Map<String, dynamic>> _assetVessels = [];
+  int _selectedAssetShipIndex = 0;
+  int _selectedAssetItemType = 1;
+  int? _selectedAssetItemCode;
 
   List<Map<String, dynamic>> _vessels = [];
   int _selectedShipIndex = 0;
@@ -69,6 +74,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
     super.initState();
     _fetchInventory();
     _fetchAssetStations();
+    _fetchAssetInventory();
   }
 
   int _getPilotUid() {
@@ -246,6 +252,87 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
         _isLoadingAssetStations = false;
       });
     }
+  }
+
+  Future<void> _fetchAssetInventory() async {
+    final int pilotUid = _getPilotUid();
+    if (pilotUid == 0) return;
+
+    setState(() {
+      _isLoadingAssets = true;
+    });
+
+    try {
+      final String stationParam =
+          _selectedAssetStationId != null
+              ? 'station_id=$_selectedAssetStationId'
+              : 'station_id=all';
+      final uri = Uri.parse(
+        '${widget.apiBaseUrl}/api/hangar/inventory/$pilotUid?$stationParam',
+      );
+      final response = await http.get(uri);
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded['status'] == 'sucesso' && decoded['data'] != null) {
+          final List rawVessels = (decoded['data']['vessels'] as List?) ?? [];
+          final parsedVessels =
+              rawVessels.map<Map<String, dynamic>>((v) {
+                final map = Map<String, dynamic>.from(v as Map);
+                final List rawCargo = (map['cargo_items'] as List?) ?? [];
+                map['cargo_items'] =
+                    rawCargo
+                        .map<Map<String, dynamic>>(
+                          (c) => Map<String, dynamic>.from(c as Map),
+                        )
+                        .toList();
+                return map;
+              }).toList();
+
+          setState(() {
+            _assetVessels = parsedVessels;
+            _selectedAssetShipIndex = 0;
+            _selectedAssetItemCode = null;
+            _isLoadingAssets = false;
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar inventário de ativos: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingAssets = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _getAssetShipItemsForType(int itemType) {
+    if (_assetVessels.isEmpty ||
+        _selectedAssetShipIndex >= _assetVessels.length) {
+      return [];
+    }
+    final ship = _assetVessels[_selectedAssetShipIndex];
+    final List<Map<String, dynamic>> items =
+        (ship['cargo_items'] as List<Map<String, dynamic>>?) ?? [];
+    return items
+        .where((i) => (i['item_type'] as num?)?.toInt() == itemType)
+        .toList();
+  }
+
+  void _cycleAssetShip(int delta) {
+    if (_assetVessels.length <= 1) return;
+    setState(() {
+      _selectedAssetShipIndex =
+          (_selectedAssetShipIndex + delta) % _assetVessels.length;
+      if (_selectedAssetShipIndex < 0) {
+        _selectedAssetShipIndex = _assetVessels.length - 1;
+      }
+      _selectedAssetItemCode = null;
+    });
   }
 
   List<Map<String, dynamic>> _getShipItemsForType(int itemType) {
@@ -593,6 +680,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             onTap: () {
               setState(() => _activeTab = 'GESTÃO DE ATIVOS');
               if (_assetStations.isEmpty) _fetchAssetStations();
+              if (_assetVessels.isEmpty) _fetchAssetInventory();
             },
             isWide: isWide,
           ),
@@ -646,14 +734,6 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   }
 
   Widget _buildAssetManagementTab({required bool isWide}) {
-    final String currentStationLabel = _selectedAssetStationId == null
-        ? 'TODAS AS ESTAÇÕES'
-        : (_assetStations.firstWhere(
-            (s) => s['id'] == _selectedAssetStationId,
-            orElse: () => {'name': 'ESTAÇÃO DESCONHECIDA'},
-          )['name'] ??
-          'ESTAÇÃO');
-
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -765,6 +845,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                           setState(() {
                             _selectedAssetStationId = val;
                           });
+                          _fetchAssetInventory();
                         },
                       ),
                     ),
@@ -773,7 +854,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                 const SizedBox(width: 8),
                 IconButton(
                   icon:
-                      _isLoadingAssetStations
+                      (_isLoadingAssetStations || _isLoadingAssets)
                           ? const SizedBox(
                             width: 14,
                             height: 14,
@@ -794,90 +875,542 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                   ),
                   tooltip: 'Recarregar estações com ativos',
                   onPressed:
-                      _isLoadingAssetStations ? null : _fetchAssetStations,
+                      (_isLoadingAssetStations || _isLoadingAssets)
+                          ? null
+                          : () {
+                            _fetchAssetStations();
+                            _fetchAssetInventory();
+                          },
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
 
-          // 2. Área Central: Visualização do Passo 1
-          Expanded(
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D1117),
-                  border: Border.all(
-                    color: _cyanColor.withValues(alpha: 0.3),
-                    width: 1.0,
+          // 2. Seletor de Naves em Ativos + Grupos de Itens + Área de Carga da Nave
+          if (_isLoadingAssets)
+            const Expanded(
+              child: Center(
+                child: CircularProgressIndicator(color: _cyanColor),
+              ),
+            )
+          else if (_assetVessels.isEmpty)
+            Expanded(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    border: Border.all(
+                      color: _cyanColor.withValues(alpha: 0.3),
+                      width: 1.0,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.hub_outlined,
-                      color: _greenAccent,
-                      size: 38,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'GESTÃO DE ATIVOS // PASSO 1 CONCLUÍDO',
-                      style: GoogleFonts.shareTechMono(
-                        color: _greenAccent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.rocket_outlined,
+                        color: _cyanColor,
+                        size: 38,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'FILTRO ATIVO: $currentStationLabel',
-                      style: GoogleFonts.shareTechMono(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${_assetStations.length} estação(ões) identificada(s) com itens do piloto na base orbit_stations.',
-                      style: GoogleFonts.shareTechMono(
-                        color: Colors.white70,
-                        fontSize: 10.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _cyanColor.withValues(alpha: 0.12),
-                        border: Border.all(
-                          color: _cyanColor.withValues(alpha: 0.6),
-                          width: 1,
-                        ),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        'PRONTO PARA O PRÓXIMO PASSO',
+                      const SizedBox(height: 12),
+                      Text(
+                        'NENHUMA NAVE ENCONTRADA NESTA LOCALIZAÇÃO.',
                         style: GoogleFonts.shareTechMono(
                           color: _cyanColor,
-                          fontSize: 9.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
+                          letterSpacing: 1.1,
                         ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Não há naves registradas para o filtro selecionado.',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else ...[
+            _buildAssetShipSelectorHeader(isWide: isWide),
+            const SizedBox(height: 6),
+            _buildAssetGroupButtonsBar(isWide: isWide),
+            const SizedBox(height: 6),
+            Expanded(
+              child: _buildAssetShipShowcasePanel(isWide: isWide),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 1b. GESTÃO DE ATIVOS - SELETOR DE NAVE COM HOLOGRAMA E VOLUME
+  // ===========================================================================
+  Widget _buildAssetShipSelectorHeader({required bool isWide}) {
+    if (_assetVessels.isEmpty ||
+        _selectedAssetShipIndex >= _assetVessels.length) {
+      return const SizedBox.shrink();
+    }
+    final ship = _assetVessels[_selectedAssetShipIndex];
+    final bool isActive = ship['selected'] == true;
+    final int maxVol = (ship['max_cargo_volume'] as num?)?.toInt() ?? 1;
+    final int usedVol = (ship['used_cargo_volume'] as num?)?.toInt() ?? 0;
+    final int availVol = (ship['available_cargo_volume'] as num?)?.toInt() ?? 0;
+    final double ratio = (usedVol / (maxVol > 0 ? maxVol : 1)).clamp(0.0, 1.0);
+    final String? holoUrl = ship['hologram_url'] as String?;
+    final String fullHoloUrl =
+        (holoUrl != null && holoUrl.isNotEmpty)
+            ? (holoUrl.startsWith('http')
+                ? holoUrl
+                : '${widget.apiBaseUrl}${holoUrl.startsWith('/') ? '' : '/'}$holoUrl')
+            : '';
+
+    final Color barColor =
+        ratio > 0.9 ? _redAccent : (ratio > 0.7 ? _amberAccent : _greenAccent);
+
+    final String shipStationName = (ship['station_name'] ?? '').toString();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _cyanColor.withValues(alpha: 0.6), width: 1.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_left, color: _cyanColor, size: 22),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed:
+                _assetVessels.length > 1 ? () => _cycleAssetShip(-1) : null,
+          ),
+          const SizedBox(width: 4),
+
+          // Miniatura do Holograma da Nave (38x38)
+          Container(
+            width: 38,
+            height: 38,
+            padding: const EdgeInsets.all(3),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0F16),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: isActive ? _greenAccent : _cyanColor,
+                width: 1.0,
+              ),
+            ),
+            child:
+                fullHoloUrl.isNotEmpty
+                    ? Image.network(
+                      fullHoloUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder:
+                          (_, __, ___) => const Icon(
+                            Icons.rocket_launch,
+                            color: _cyanColor,
+                            size: 20,
+                          ),
+                    )
+                    : const Icon(
+                      Icons.rocket_launch,
+                      color: _cyanColor,
+                      size: 20,
+                    ),
+          ),
+          const SizedBox(width: 10),
+
+          // Nome da Nave + Status + Estação (se filtro for TODAS) + Métricas
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      ship['name'].toString(),
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            isActive
+                                ? _greenAccent.withValues(alpha: 0.18)
+                                : _cyanColor.withValues(alpha: 0.15),
+                        border: Border.all(
+                          color: isActive ? _greenAccent : _cyanColor,
+                          width: 0.8,
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Text(
+                        isActive ? 'ATIVA' : 'ATRACADA',
+                        style: GoogleFonts.shareTechMono(
+                          color: isActive ? _greenAccent : _cyanColor,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (_selectedAssetStationId == null &&
+                        shipStationName.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '• $shipStationName',
+                          style: GoogleFonts.shareTechMono(
+                            color: _cyanColor.withValues(alpha: 0.8),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Text(
+                      'MÁX: ${_formatNumber(maxVol)} m³  |  DISPONÍVEL: ${_formatNumber(availVol)} m³',
+                      style: GoogleFonts.shareTechMono(
+                        color: availVol > 0 ? _cyanColor : _redAccent,
+                        fontSize: isWide ? 11 : 9.5,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: ratio,
+                          minHeight: 5,
+                          backgroundColor: Colors.white12,
+                          valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'OCUPADO: ${_formatNumber(usedVol)} m³ (${(ratio * 100).toStringAsFixed(0)}%)',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white70,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
+          ),
+
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.arrow_right, color: _cyanColor, size: 22),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed:
+                _assetVessels.length > 1 ? () => _cycleAssetShip(1) : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 2b. GESTÃO DE ATIVOS - BARRA DE BOTÕES DE GRUPOS DE ITENS
+  // ===========================================================================
+  Widget _buildAssetGroupButtonsBar({required bool isWide}) {
+    return Row(
+      children:
+          _categories.map((cat) {
+            final int typeCode = cat['type'] as int;
+            final String label = cat['label'] as String;
+            final int flexWeight = (cat['flex'] as int?) ?? 10;
+            final bool isSelected = _selectedAssetItemType == typeCode;
+
+            final int shipCount = _getAssetShipItemsForType(typeCode).length;
+
+            return Expanded(
+              flex: flexWeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedAssetItemType = typeCode;
+                      _selectedAssetItemCode = null;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 7,
+                      horizontal: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected ? _greenAccent : _panelBg,
+                      border: Border.all(
+                        color: isSelected ? _greenAccent : _cyanColor,
+                        width: isSelected ? 1.8 : 1.0,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        shipCount > 0 ? '$label ($shipCount)' : label,
+                        style: GoogleFonts.shareTechMono(
+                          color: isSelected ? Colors.black : Colors.white,
+                          fontSize: isWide ? 11 : 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+    );
+  }
+
+  // ===========================================================================
+  // 3b. GESTÃO DE ATIVOS - MOSTRUÁRIO DE CARGA DA NAVE
+  // ===========================================================================
+  Widget _buildAssetShipShowcasePanel({required bool isWide}) {
+    if (_assetVessels.isEmpty ||
+        _selectedAssetShipIndex >= _assetVessels.length) {
+      return const SizedBox.shrink();
+    }
+    final ship = _assetVessels[_selectedAssetShipIndex];
+    final items = _getAssetShipItemsForType(_selectedAssetItemType);
+    final accentColor = _greenAccent;
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.55),
+          width: 1.2,
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  'ÁREA DE CARGA DA NAVE (${ship['name']})',
+                  style: GoogleFonts.shareTechMono(
+                    color: accentColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'LIVRE: ${_formatNumber(ship['available_cargo_volume'])} m³ / MÁX: ${_formatNumber(ship['max_cargo_volume'])} m³',
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white70,
+                  fontSize: 9.5,
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white12, height: 10),
+          Expanded(
+            child:
+                items.isEmpty
+                    ? Center(
+                      child: Text(
+                        'Nenhum item deste grupo na área de carga desta nave.',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white38,
+                          fontSize: 11,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                    : GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 116,
+                            mainAxisExtent: 124,
+                            crossAxisSpacing: 6,
+                            mainAxisSpacing: 6,
+                          ),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final int itemCode =
+                            (item['item_code'] as num).toInt();
+                        final bool isSelected =
+                            _selectedAssetItemCode == itemCode;
+                        final int amount =
+                            (item['amount'] as num?)?.toInt() ?? 0;
+                        final int unitVol =
+                            (item['unit_volume'] as num?)?.toInt() ?? 1;
+                        final int totalVol =
+                            (item['total_volume'] as num?)?.toInt() ??
+                            (amount * unitVol);
+                        final int itemType =
+                            (item['item_type'] as num?)?.toInt() ?? 1;
+
+                        return InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedAssetItemCode = itemCode;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color:
+                                  isSelected
+                                      ? accentColor.withValues(alpha: 0.14)
+                                      : _cardBg,
+                              border: Border.all(
+                                color:
+                                    isSelected ? accentColor : Colors.white24,
+                                width: isSelected ? 1.8 : 1.0,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Imagem do Item + Badge de Quantidade
+                                Expanded(
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0B0E14),
+                                            borderRadius: BorderRadius.circular(
+                                              3,
+                                            ),
+                                          ),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: _buildItemImage(
+                                            item['image_url'] as String?,
+                                            itemType,
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        right: 3,
+                                        bottom: 3,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                            vertical: 1.5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.85,
+                                            ),
+                                            border: Border.all(
+                                              color: accentColor,
+                                              width: 0.8,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              3,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'QTD: $amount',
+                                            style: GoogleFonts.shareTechMono(
+                                              color: accentColor,
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+
+                                // Nome do Item
+                                Text(
+                                  (item['name'] ?? '').toString().toUpperCase(),
+                                  style: GoogleFonts.shareTechMono(
+                                    color:
+                                        isSelected
+                                            ? accentColor
+                                            : Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 1.5),
+
+                                // Volume unitário e Volume total ocupado pelo lote
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Un: ${unitVol}m³',
+                                      style: GoogleFonts.shareTechMono(
+                                        color: Colors.white54,
+                                        fontSize: 8,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Tot: ${totalVol}m³',
+                                      style: GoogleFonts.shareTechMono(
+                                        color: _cyanColor,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
