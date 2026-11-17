@@ -263,13 +263,22 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
     }
   }
 
-  Future<void> _fetchAssetInventory() async {
+  Future<void> _fetchAssetInventory({bool preserveSelection = false}) async {
     final int pilotUid = _getPilotUid();
     if (pilotUid == 0) return;
 
-    setState(() {
-      _isLoadingAssets = true;
-    });
+    final dynamic prevVesselUid =
+        (preserveSelection &&
+                _assetVessels.isNotEmpty &&
+                _selectedAssetShipIndex < _assetVessels.length)
+            ? _assetVessels[_selectedAssetShipIndex]['vessel_uid']
+            : null;
+
+    if (!preserveSelection || _assetVessels.isEmpty) {
+      setState(() {
+        _isLoadingAssets = true;
+      });
+    }
 
     try {
       final String stationParam =
@@ -324,7 +333,14 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
               'items': parsedStationItems,
             };
             _assetVessels = parsedVessels;
-            _selectedAssetShipIndex = 0;
+            if (preserveSelection && prevVesselUid != null) {
+              final idx = _assetVessels.indexWhere(
+                (v) => v['vessel_uid'] == prevVesselUid,
+              );
+              _selectedAssetShipIndex = idx >= 0 ? idx : 0;
+            } else {
+              _selectedAssetShipIndex = 0;
+            }
             _selectedAssetItemCode = null;
             _isLoadingAssets = false;
           });
@@ -493,6 +509,8 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
 
       if (response.statusCode == 200 && decoded['status'] == 'sucesso') {
         await _fetchInventory(preserveSelection: true);
+        _fetchAssetInventory(preserveSelection: true);
+        _fetchAssetStations();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -705,7 +723,10 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             label: 'LOGÍSTICA LOCAL',
             icon: Icons.swap_horiz_rounded,
             isSelected: _activeTab == 'LOGÍSTICA LOCAL',
-            onTap: () => setState(() => _activeTab = 'LOGÍSTICA LOCAL'),
+            onTap: () {
+              setState(() => _activeTab = 'LOGÍSTICA LOCAL');
+              _fetchInventory(preserveSelection: true);
+            },
             isWide: isWide,
           ),
         ),
@@ -717,8 +738,8 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             isSelected: _activeTab == 'GESTÃO DE ATIVOS',
             onTap: () {
               setState(() => _activeTab = 'GESTÃO DE ATIVOS');
-              if (_assetStations.isEmpty) _fetchAssetStations();
-              if (_assetVessels.isEmpty) _fetchAssetInventory();
+              _fetchAssetStations();
+              _fetchAssetInventory(preserveSelection: true);
             },
             isWide: isWide,
           ),
@@ -1255,9 +1276,6 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             final bool isSelected = _selectedAssetItemType == typeCode;
 
             final int shipCount = _getAssetShipItemsForType(typeCode).length;
-            final int stationCount =
-                _getAssetStationItemsForType(typeCode).length;
-            final int totalTypes = shipCount + stationCount;
 
             return Expanded(
               flex: flexWeight,
@@ -1287,7 +1305,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        totalTypes > 0 ? '$label ($totalTypes)' : label,
+                        shipCount > 0 ? '$label ($shipCount)' : label,
                         style: GoogleFonts.shareTechMono(
                           color: isSelected ? Colors.black : Colors.white,
                           fontSize: isWide ? 11 : 9.5,
@@ -1700,8 +1718,6 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             final bool isSelected = _selectedItemType == typeCode;
 
             final int shipCount = _getShipItemsForType(typeCode).length;
-            final int stationCount = _getStationItemsForType(typeCode).length;
-            final int totalTypes = shipCount + stationCount;
 
             return Expanded(
               flex: flexWeight,
@@ -1731,7 +1747,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        totalTypes > 0 ? '$label ($totalTypes)' : label,
+                        shipCount > 0 ? '$label ($shipCount)' : label,
                         style: GoogleFonts.shareTechMono(
                           color: isSelected ? Colors.black : Colors.white,
                           fontSize: isWide ? 11 : 9.5,
