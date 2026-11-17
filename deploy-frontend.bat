@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
+title DEPLOY FRONTEND WEB - STAR ORPHANS
+color 0B
 
 echo =======================================================
 echo    STAR ORPHANS - DEPLOY AUTOMATIZADO DO FRONTEND WEB
@@ -21,7 +23,8 @@ if exist "%USERPROFILE%\star_orphans_app\pubspec.yaml" (
 )
 
 echo [ERRO] Nao foi possivel encontrar a pasta do aplicativo Flutter!
-goto :END
+if "%~1" neq "--no-pause" pause
+exit /b 1
 
 :FOUND
 echo [OK] Pasta local identificada: "%APP_DIR%"
@@ -30,9 +33,15 @@ cd /d "%APP_DIR%"
 REM 2. Verificacao do disco Z:
 set "DEST_DIR=Z:\OrphansSolutions\apis\src\public"
 if not exist "Z:\OrphansSolutions" (
+    echo [INFO] Tentando conectar unidade de rede Z:...
+    net use Z: \\100.96.189.103\Hyper-V /persistent:yes >nul 2>&1
+)
+if not exist "Z:\OrphansSolutions" (
     echo [ERRO] O disco de rede Z:\OrphansSolutions nao esta acessivel!
-    echo Verifique se a pasta compartilhada do servidor esta mapeada como Z:.
-    goto :END
+    echo Verifique se a pasta compartilhada do servidor esta conectada.
+    echo.
+    if "%~1" neq "--no-pause" pause
+    exit /b 1
 )
 if not exist "%DEST_DIR%" (
     mkdir "%DEST_DIR%" >nul 2>&1
@@ -44,8 +53,12 @@ echo.
 echo [1/3] Compilando versao Web Release otimizada (CanvasKit/WASM)...
 call flutter build web --release
 if errorlevel 1 (
+    color 0C
+    echo.
     echo [ERRO] Falha ao compilar o aplicativo Flutter!
-    goto :END
+    echo.
+    if "%~1" neq "--no-pause" pause
+    exit /b 1
 )
 
 REM 4. Copia dos arquivos estaticos para o servidor
@@ -74,7 +87,12 @@ if exist "%TEMP_ASKPASS%" del "%TEMP_ASKPASS%" >nul 2>&1
 echo.
 echo =======================================================
 echo    FRONTEND WEB/PWA ATUALIZADO COM SUCESSO!
+echo    Disponivel em: http://26.239.180.177:8020
 echo =======================================================
 echo.
 
+if "%~1" neq "--no-pause" (
+    echo Pressione qualquer tecla para fechar esta janela...
+    pause >nul
+)
 :END
