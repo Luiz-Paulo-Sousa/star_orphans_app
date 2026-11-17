@@ -51,6 +51,15 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   int _selectedAssetShipIndex = 0;
   int _selectedAssetItemType = 1;
   int? _selectedAssetItemCode;
+  String _selectedAssetSource = 'STATION'; // 'SHIP' ou 'STATION'
+  Map<String, dynamic> _assetStationData = {
+    'station_id': null,
+    'station_name': 'TODAS AS ESTAÇÕES',
+    'max_volume': 50000,
+    'used_volume': 0,
+    'available_volume': 50000,
+    'items': <Map<String, dynamic>>[],
+  };
 
   List<Map<String, dynamic>> _vessels = [];
   int _selectedShipIndex = 0;
@@ -276,7 +285,18 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded['status'] == 'sucesso' && decoded['data'] != null) {
+          final rawStation =
+              (decoded['data']['station'] as Map<String, dynamic>?) ?? {};
+          final List rawStationItems = (rawStation['items'] as List?) ?? [];
           final List rawVessels = (decoded['data']['vessels'] as List?) ?? [];
+
+          final parsedStationItems =
+              rawStationItems
+                  .map<Map<String, dynamic>>(
+                    (e) => Map<String, dynamic>.from(e as Map),
+                  )
+                  .toList();
+
           final parsedVessels =
               rawVessels.map<Map<String, dynamic>>((v) {
                 final map = Map<String, dynamic>.from(v as Map);
@@ -291,6 +311,18 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
               }).toList();
 
           setState(() {
+            _assetStationData = {
+              'station_id': rawStation['station_id'],
+              'station_name':
+                  (rawStation['station_name'] ?? 'ESTAÇÃO').toString(),
+              'max_volume':
+                  (rawStation['max_volume'] as num?)?.toInt() ?? 50000,
+              'used_volume':
+                  (rawStation['used_volume'] as num?)?.toInt() ?? 0,
+              'available_volume':
+                  (rawStation['available_volume'] as num?)?.toInt() ?? 50000,
+              'items': parsedStationItems,
+            };
             _assetVessels = parsedVessels;
             _selectedAssetShipIndex = 0;
             _selectedAssetItemCode = null;
@@ -323,14 +355,20 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
         .toList();
   }
 
+  List<Map<String, dynamic>> _getAssetStationItemsForType(int itemType) {
+    final List<Map<String, dynamic>> items =
+        (_assetStationData['items'] as List<Map<String, dynamic>>?) ?? [];
+    return items
+        .where((i) => (i['item_type'] as num?)?.toInt() == itemType)
+        .toList();
+  }
+
   void _cycleAssetShip(int delta) {
     if (_assetVessels.length <= 1) return;
     setState(() {
       _selectedAssetShipIndex =
-          (_selectedAssetShipIndex + delta) % _assetVessels.length;
-      if (_selectedAssetShipIndex < 0) {
-        _selectedAssetShipIndex = _assetVessels.length - 1;
-      }
+          (_selectedAssetShipIndex + delta + _assetVessels.length) %
+          _assetVessels.length;
       _selectedAssetItemCode = null;
     });
   }
@@ -887,14 +925,15 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
           ),
           const SizedBox(height: 6),
 
-          // 2. Seletor de Naves em Ativos + Grupos de Itens + Área de Carga da Nave
+          // 2. Seletor de Naves em Ativos + Grupos de Itens + Área de Carga da Nave + Depósito da Estação
           if (_isLoadingAssets)
             const Expanded(
               child: Center(
                 child: CircularProgressIndicator(color: _cyanColor),
               ),
             )
-          else if (_assetVessels.isEmpty)
+          else if (_assetVessels.isEmpty &&
+              (_assetStationData['items'] as List).isEmpty)
             Expanded(
               child: Center(
                 child: Container(
@@ -911,13 +950,13 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
-                        Icons.rocket_outlined,
+                        Icons.inventory_2_outlined,
                         color: _cyanColor,
                         size: 38,
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'NENHUMA NAVE ENCONTRADA NESTA LOCALIZAÇÃO.',
+                        'NENHUM ATIVO ENCONTRADO NESTA LOCALIZAÇÃO.',
                         style: GoogleFonts.shareTechMono(
                           color: _cyanColor,
                           fontSize: 12,
@@ -928,7 +967,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Não há naves registradas para o filtro selecionado.',
+                        'Não há naves nem itens no depósito para o filtro selecionado.',
                         style: GoogleFonts.shareTechMono(
                           color: Colors.white54,
                           fontSize: 10,
@@ -944,8 +983,46 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             const SizedBox(height: 6),
             _buildAssetGroupButtonsBar(isWide: isWide),
             const SizedBox(height: 6),
+            // Mostruário Superior: Área de Carga da Nave
             Expanded(
-              child: _buildAssetShipShowcasePanel(isWide: isWide),
+              child: _buildAssetShowcasePanel(
+                title:
+                    _assetVessels.isNotEmpty
+                        ? 'ÁREA DE CARGA DA NAVE (${_assetVessels[_selectedAssetShipIndex]['name']})'
+                        : 'ÁREA DE CARGA DA NAVE',
+                subtitle:
+                    _assetVessels.isNotEmpty
+                        ? 'LIVRE: ${_formatNumber(_assetVessels[_selectedAssetShipIndex]['available_cargo_volume'])} m³ / MÁX: ${_formatNumber(_assetVessels[_selectedAssetShipIndex]['max_cargo_volume'])} m³'
+                        : 'SEM NAVE',
+                items: _getAssetShipItemsForType(_selectedAssetItemType),
+                sourceKey: 'SHIP',
+                accentColor: _greenAccent,
+                emptyMessage:
+                    _assetVessels.isNotEmpty
+                        ? 'Nenhum item deste grupo na área de carga desta nave.'
+                        : 'Nenhuma nave atracada nesta localização.',
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Mostruário Inferior: Depósito da Estação
+            Expanded(
+              child: _buildAssetShowcasePanel(
+                title:
+                    _selectedAssetStationId == null
+                        ? 'DEPÓSITO (TODAS AS ESTAÇÕES)'
+                        : 'DEPÓSITO DA ESTAÇÃO (${_assetStationData['station_name']})',
+                subtitle:
+                    _selectedAssetStationId == null
+                        ? 'TOTAL OCUPADO: ${_formatNumber(_assetStationData['used_volume'])} m³'
+                        : 'OCUPADO: ${_formatNumber(_assetStationData['used_volume'])} / ${_formatNumber(_assetStationData['max_volume'])} m³ (LIVRE: ${_formatNumber(_assetStationData['available_volume'])} m³)',
+                items: _getAssetStationItemsForType(_selectedAssetItemType),
+                sourceKey: 'STATION',
+                accentColor: _cyanColor,
+                emptyMessage:
+                    _selectedAssetStationId == null
+                        ? 'Nenhum item deste grupo nos depósitos das estações.'
+                        : 'Nenhum item deste grupo no seu depósito desta estação.',
+              ),
             ),
           ],
         ],
@@ -959,7 +1036,31 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   Widget _buildAssetShipSelectorHeader({required bool isWide}) {
     if (_assetVessels.isEmpty ||
         _selectedAssetShipIndex >= _assetVessels.length) {
-      return const SizedBox.shrink();
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          border: Border.all(
+            color: _cyanColor.withValues(alpha: 0.4),
+            width: 1.0,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.rocket_outlined, color: _cyanColor, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'NENHUMA NAVE ATRACADA NESTA LOCALIZAÇÃO.',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white70,
+                fontSize: isWide ? 11 : 10,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
+      );
     }
     final ship = _assetVessels[_selectedAssetShipIndex];
     final bool isActive = ship['selected'] == true;
@@ -1154,6 +1255,9 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             final bool isSelected = _selectedAssetItemType == typeCode;
 
             final int shipCount = _getAssetShipItemsForType(typeCode).length;
+            final int stationCount =
+                _getAssetStationItemsForType(typeCode).length;
+            final int totalTypes = shipCount + stationCount;
 
             return Expanded(
               flex: flexWeight,
@@ -1183,7 +1287,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        shipCount > 0 ? '$label ($shipCount)' : label,
+                        totalTypes > 0 ? '$label ($totalTypes)' : label,
                         style: GoogleFonts.shareTechMono(
                           color: isSelected ? Colors.black : Colors.white,
                           fontSize: isWide ? 11 : 9.5,
@@ -1201,17 +1305,16 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
   }
 
   // ===========================================================================
-  // 3b. GESTÃO DE ATIVOS - MOSTRUÁRIO DE CARGA DA NAVE
+  // 3b & 5b. GESTÃO DE ATIVOS - MOSTRUÁRIO DE ITENS (CARGA DA NAVE / DEPÓSITO)
   // ===========================================================================
-  Widget _buildAssetShipShowcasePanel({required bool isWide}) {
-    if (_assetVessels.isEmpty ||
-        _selectedAssetShipIndex >= _assetVessels.length) {
-      return const SizedBox.shrink();
-    }
-    final ship = _assetVessels[_selectedAssetShipIndex];
-    final items = _getAssetShipItemsForType(_selectedAssetItemType);
-    final accentColor = _greenAccent;
-
+  Widget _buildAssetShowcasePanel({
+    required String title,
+    required String subtitle,
+    required List<Map<String, dynamic>> items,
+    required String sourceKey,
+    required Color accentColor,
+    required String emptyMessage,
+  }) {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -1230,7 +1333,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
             children: [
               Flexible(
                 child: Text(
-                  'ÁREA DE CARGA DA NAVE (${ship['name']})',
+                  title,
                   style: GoogleFonts.shareTechMono(
                     color: accentColor,
                     fontSize: 11,
@@ -1241,7 +1344,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
               ),
               const SizedBox(width: 8),
               Text(
-                'LIVRE: ${_formatNumber(ship['available_cargo_volume'])} m³ / MÁX: ${_formatNumber(ship['max_cargo_volume'])} m³',
+                subtitle,
                 style: GoogleFonts.shareTechMono(
                   color: Colors.white70,
                   fontSize: 9.5,
@@ -1255,7 +1358,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                 items.isEmpty
                     ? Center(
                       child: Text(
-                        'Nenhum item deste grupo na área de carga desta nave.',
+                        emptyMessage,
                         style: GoogleFonts.shareTechMono(
                           color: Colors.white38,
                           fontSize: 11,
@@ -1277,6 +1380,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                         final int itemCode =
                             (item['item_code'] as num).toInt();
                         final bool isSelected =
+                            _selectedAssetSource == sourceKey &&
                             _selectedAssetItemCode == itemCode;
                         final int amount =
                             (item['amount'] as num?)?.toInt() ?? 0;
@@ -1291,6 +1395,7 @@ class _InventoryModuleWidgetState extends State<InventoryModuleWidget> {
                         return InkWell(
                           onTap: () {
                             setState(() {
+                              _selectedAssetSource = sourceKey;
                               _selectedAssetItemCode = itemCode;
                             });
                           },
