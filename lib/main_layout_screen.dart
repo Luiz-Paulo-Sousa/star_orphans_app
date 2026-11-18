@@ -13,6 +13,7 @@ import 'modules/market/market_module_widget.dart';
 import 'modules/inventory/inventory_module_widget.dart';
 import 'modules/factory/factory_module_widget.dart';
 import 'modules/contracts/contracts_module_widget.dart';
+import 'modules/corporation/corporation_module_widget.dart';
 import 'services/notification_websocket_service.dart';
 
 class MainLayoutScreen extends StatefulWidget {
@@ -518,7 +519,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           onProfileRefresh: _refreshProfileData,
         );
       case 7:
-        return _buildPlaceholderScreen('CORPORAÇÕES');
+        return CorporationModuleWidget(
+          profileData: _currentProfileData,
+          apiBaseUrl: widget.apiBaseUrl,
+          onProfileRefresh: _refreshProfileData,
+        );
       default:
         return _buildPlaceholderScreen('TELA DESCONHECIDA');
     }
