@@ -37,6 +37,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   Map<String, dynamic>? _corporationData;
   bool _hasPendingApplication = false;
   Map<String, dynamic>? _pendingApplication;
+  num _pilotCredits = 0;
 
   // Alternador para testes rápidos no VS Code
   bool _simulateNoCorporation = false;
@@ -53,15 +54,28 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   int? _selectedCorpUid;
   bool _isSubmittingAction = false;
 
+  // Estados do Passo 4 (Criação de Corporação)
+  final TextEditingController _corpNameController = TextEditingController();
+  final TextEditingController _stationSearchController = TextEditingController();
+  String _stationSearchFilter = '';
+  List<Map<String, dynamic>> _availableStations = [];
+  bool _isLoadingStations = false;
+  String? _stationsErrorMessage;
+  int? _selectedStationId;
+
   @override
   void initState() {
     super.initState();
+    final op = widget.profileData?['operator'];
+    _pilotCredits = (op?['credits'] ?? widget.profileData?['wallet']?['credits'] ?? 0) as num;
     _fetchCorporationStatus();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _corpNameController.dispose();
+    _stationSearchController.dispose();
     super.dispose();
   }
 
@@ -120,6 +134,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             _corporationData = data['corporation'];
             _hasPendingApplication = data['has_pending_application'] == true;
             _pendingApplication = data['pending_application'];
+            if (data['pilot_credits'] != null) {
+              _pilotCredits = (data['pilot_credits'] as num);
+            }
             _isLoading = false;
           });
           return;
@@ -167,6 +184,40 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       setState(() {
         _corpsErrorMessage = 'Erro ao conectar ao servidor: $e';
         _isLoadingCorps = false;
+      });
+    }
+  }
+
+  /// Consulta a lista de estações disponíveis para fundar corporação (Passo 4)
+  Future<void> _fetchAvailableStations() async {
+    setState(() {
+      _isLoadingStations = true;
+      _stationsErrorMessage = null;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/stations');
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['status'] == 'sucesso') {
+          final list = List<Map<String, dynamic>>.from(decoded['data'] ?? []);
+          setState(() {
+            _availableStations = list;
+            _isLoadingStations = false;
+          });
+          return;
+        }
+      }
+      setState(() {
+        _stationsErrorMessage = 'Falha ao carregar lista de estações disponíveis.';
+        _isLoadingStations = false;
+      });
+    } catch (e) {
+      setState(() {
+        _stationsErrorMessage = 'Erro ao conectar ao servidor: $e';
+        _isLoadingStations = false;
       });
     }
   }
@@ -236,7 +287,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Uma notificação direta será transmitida ao comandante fundador. Você deverá aguardar a análise.',
+              'Uma mensagem de e-mail direta será transmitida aos canais do comandante fundador. Você deverá aguardar a análise.',
               style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 11),
             ),
           ],
@@ -495,6 +546,216 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     }
   }
 
+  /// Confirma e cria a própria corporação (Passo 4)
+  Future<void> _submitCreateCorporation() async {
+    final corpName = _corpNameController.text.trim();
+    if (corpName.length < 3 || _selectedStationId == null || _isSubmittingAction) return;
+
+    if (_pilotCredits < 1000000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF421515),
+          content: Text(
+            'Créditos insuficientes! Você possui ${_formatCredits(_pilotCredits)} CR, mas a fundação exige 1.000.000 CR.',
+            style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selectedStation = _availableStations.firstWhere(
+      (s) => s['station_id'] == _selectedStationId,
+      orElse: () => {},
+    );
+    final stationName = selectedStation['station_name'] ?? 'Estação Selecionada';
+    final orbitName = selectedStation['orbit_name'] ?? 'Setor';
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardBg,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _greenAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.rocket_launch_outlined, color: _greenAccent, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'CONFIRMAR FUNDAÇÃO CORPORATIVA',
+              style: GoogleFonts.shareTechMono(
+                color: _greenAccent,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Deseja oficializar a fundação da corporação "${corpName.toUpperCase()}"?',
+              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _panelBg,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDialogRow('NOME OFICIAL:', corpName.toUpperCase()),
+                  const SizedBox(height: 6),
+                  _buildDialogRow('ESTAÇÃO BASE:', stationName),
+                  const SizedBox(height: 6),
+                  _buildDialogRow('ÓRBITA:', orbitName),
+                  const SizedBox(height: 6),
+                  _buildDialogRow('TAXA DE ABERTURA:', '1.000.000 CR'),
+                  const SizedBox(height: 6),
+                  _buildDialogRow('DESTINO DA TAXA:', 'Carteira da Estação Base'),
+                  const SizedBox(height: 6),
+                  _buildDialogRow('SEU SALDO ATUAL:', '${_formatCredits(_pilotCredits)} CR'),
+                  const SizedBox(height: 6),
+                  _buildDialogRow(
+                    'SALDO APÓS DÉBITO:',
+                    '${_formatCredits(_pilotCredits - 1000000)} CR',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'O valor será debitado imediatamente e uma transação financeira oficial será registrada. Você assumirá a patente de Comandante Líder.',
+              style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _greenAccent.withOpacity(0.2),
+              foregroundColor: _greenAccent,
+              side: const BorderSide(color: _greenAccent),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'PAGAR 1.000.000 CR & FUNDAR',
+              style: GoogleFonts.shareTechMono(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isSubmittingAction = true;
+    });
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/create');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'pilot_uid': _pilotUid,
+          'name': corpName,
+          'station_uid': _selectedStationId,
+        }),
+      ).timeout(const Duration(seconds: 12));
+
+      final decoded = json.decode(response.body);
+
+      if (response.statusCode == 201 && decoded['status'] == 'sucesso') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF0D3B2E),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+              shape: RoundedRectangleBorder(
+                side: const BorderSide(color: _greenAccent),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              content: Row(
+                children: [
+                  const Icon(Icons.verified, color: _greenAccent, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      decoded['mensagem'] ?? 'Corporação fundada com sucesso!',
+                      style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Notifica o app para atualizar os créditos e dados no cabeçalho
+        widget.onProfileRefresh?.call();
+
+        // Atualiza status local do módulo (agora has_corporation = true)
+        setState(() {
+          _currentView = 'initial';
+          _corpNameController.clear();
+          _selectedStationId = null;
+        });
+        await _fetchCorporationStatus(silent: true);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF421515),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                side: const BorderSide(color: _redAccent),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              content: Text(
+                decoded['mensagem'] ?? 'Falha ao criar corporação.',
+                style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF421515),
+            content: Text(
+              'Erro ao conectar: $e',
+              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmittingAction = false;
+        });
+      }
+    }
+  }
+
   Widget _buildDialogRow(String label, String value) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -667,13 +928,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       return _buildApplyView();
     }
 
-    // PASSO 4: Criação de Corporação (Em breve)
+    // PASSO 4: Tela de Criação de Corporação
     if (_currentView == 'create') {
-      return _buildPlaceholderSubView(
-        'CRIAR UMA CORPORAÇÃO',
-        'Etapa 4 em desenvolvimento: aqui será selecionada a estação base com validação da taxa de abertura de 1.000.000 CR.',
-        Icons.add_business_outlined,
-      );
+      return _buildCreateView();
     }
 
     // PASSO 1: Menu inicial de Freelancer
@@ -792,7 +1049,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 onTap: () {
                   setState(() {
                     _currentView = 'create';
+                    _corpNameController.clear();
+                    _stationSearchController.clear();
+                    _stationSearchFilter = '';
+                    _selectedStationId = null;
                   });
+                  _fetchAvailableStations();
                 },
               ),
 
@@ -1355,6 +1617,494 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     );
   }
 
+  /// PASSO 4: Tela de Criação da Própria Corporação
+  Widget _buildCreateView() {
+    final filteredStations = _availableStations.where((s) {
+      final name = (s['station_name'] ?? '').toString().toLowerCase();
+      final orbit = (s['orbit_name'] ?? '').toString().toLowerCase();
+      final term = _stationSearchFilter.toLowerCase().trim();
+      return name.contains(term) || orbit.contains(term);
+    }).toList();
+
+    final bool hasEnoughCredits = _pilotCredits >= 1000000;
+    final bool isNameValid = _corpNameController.text.trim().length >= 3;
+    final bool canSubmit = isNameValid && _selectedStationId != null && hasEnoughCredits && !_isSubmittingAction;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: Column(
+          children: [
+            // Barra superior de navegação da sub-tela
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: _panelBg,
+                border: const Border(bottom: BorderSide(color: Colors.white12)),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: _greenAccent, size: 20),
+                    tooltip: 'Voltar',
+                    onPressed: () {
+                      setState(() {
+                        _currentView = 'initial';
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CRIAR UMA CORPORAÇÃO ESTELAR',
+                          style: GoogleFonts.shareTechMono(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        Text(
+                          'Defina o nome oficial, escolha a estação base e transfira a taxa de abertura',
+                          style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Conteúdo rolável de criação
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Card 1: Resumo Financeiro da Fundação
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _panelBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: hasEnoughCredits ? _greenAccent.withOpacity(0.4) : _redAccent.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                hasEnoughCredits ? Icons.account_balance_wallet_outlined : Icons.money_off_outlined,
+                                color: hasEnoughCredits ? _greenAccent : _redAccent,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'TAXA DE FUNDAÇÃO & CARTEIRA',
+                                style: GoogleFonts.shareTechMono(
+                                  color: hasEnoughCredits ? _greenAccent : _redAccent,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: hasEnoughCredits
+                                      ? _greenAccent.withOpacity(0.15)
+                                      : _redAccent.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: hasEnoughCredits
+                                        ? _greenAccent.withOpacity(0.6)
+                                        : _redAccent.withOpacity(0.6),
+                                  ),
+                                ),
+                                child: Text(
+                                  hasEnoughCredits ? '✓ SALDO SUFICIENTE' : '✗ SALDO INSUFICIENTE',
+                                  style: GoogleFonts.shareTechMono(
+                                    color: hasEnoughCredits ? _greenAccent : _redAccent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(color: Colors.white12, height: 20),
+                          _buildInfoRow('CUSTO DE ABERTURA:', '1.000.000 CR'),
+                          const SizedBox(height: 6),
+                          _buildInfoRow('SEU SALDO ATUAL:', '${_formatCredits(_pilotCredits)} CR'),
+                          const SizedBox(height: 6),
+                          _buildInfoRow(
+                            'DESTINO DA TAXA:',
+                            _selectedStationId != null ? 'Carteira da Estação Base' : 'Estação a definir',
+                          ),
+                          if (!hasEnoughCredits) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              'Você precisa de pelo menos 1.000.000 CR para fundar uma corporação. Complete contratos ou venda itens para acumular os créditos.',
+                              style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Card 2: Nome da Corporação
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _panelBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.badge_outlined, color: _cyanColor, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                '1. NOME DA CORPORAÇÃO (3 A 30 CARACTERES)',
+                                style: GoogleFonts.shareTechMono(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _corpNameController,
+                            maxLength: 30,
+                            onChanged: (val) {
+                              setState(() {});
+                            },
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: _cardBg,
+                              hintText: 'Ex: Weyland-Yutani, Atlas Corp, Orion Syndicate...',
+                              hintStyle: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 13),
+                              prefixIcon: const Icon(Icons.business_outlined, color: _cyanColor, size: 20),
+                              counterStyle: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: isNameValid ? _cyanColor.withOpacity(0.5) : Colors.white24,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: _cyanColor, width: 1.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Card 3: Seleção da Estação Base
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _panelBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.hub_outlined, color: _cyanColor, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '2. ESCOLHA A ESTAÇÃO BASE PRINCIPAL',
+                                  style: GoogleFonts.shareTechMono(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                              ),
+                              if (_selectedStationId != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _greenAccent.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: _greenAccent.withOpacity(0.5)),
+                                  ),
+                                  child: Text(
+                                    'SELECIONADA',
+                                    style: GoogleFonts.shareTechMono(
+                                      color: _greenAccent,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'A estação base será a sede oficial de operações da sua corporação. A taxa de 1.000.000 CR será depositada na carteira desta estação.',
+                            style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11, height: 1.3),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Campo de busca da estação
+                          TextField(
+                            controller: _stationSearchController,
+                            onChanged: (val) {
+                              setState(() {
+                                _stationSearchFilter = val;
+                              });
+                            },
+                            style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: _cardBg,
+                              hintText: 'Filtrar estação pelo nome ou órbita...',
+                              hintStyle: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+                              prefixIcon: const Icon(Icons.search, color: _cyanColor, size: 18),
+                              suffixIcon: _stationSearchFilter.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                                      onPressed: () {
+                                        setState(() {
+                                          _stationSearchController.clear();
+                                          _stationSearchFilter = '';
+                                        });
+                                      },
+                                    )
+                                  : null,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(color: _cyanColor.withOpacity(0.3)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(color: _cyanColor, width: 1.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Lista rolável de estações
+                          _isLoadingStations
+                              ? const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(
+                                    child: CircularProgressIndicator(color: _cyanColor),
+                                  ),
+                                )
+                              : _stationsErrorMessage != null
+                                  ? Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            _stationsErrorMessage!,
+                                            style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 12),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          ElevatedButton(
+                                            onPressed: _fetchAvailableStations,
+                                            style: ElevatedButton.styleFrom(backgroundColor: _cyanColor),
+                                            child: Text('TENTAR NOVAMENTE', style: GoogleFonts.shareTechMono()),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : filteredStations.isEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Center(
+                                            child: Text(
+                                              'Nenhuma estação encontrada.',
+                                              style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+                                            ),
+                                          ),
+                                        )
+                                      : Container(
+                                          constraints: const BoxConstraints(maxHeight: 220),
+                                          decoration: BoxDecoration(
+                                            color: _cardBg,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: Colors.white12),
+                                          ),
+                                          child: ListView.separated(
+                                            shrinkWrap: true,
+                                            padding: const EdgeInsets.all(8),
+                                            itemCount: filteredStations.length,
+                                            separatorBuilder: (ctx, i) => const Divider(color: Colors.white10, height: 1),
+                                            itemBuilder: (ctx, index) {
+                                              final st = filteredStations[index];
+                                              final int stId = st['station_id'];
+                                              final bool isSelected = _selectedStationId == stId;
+
+                                              return InkWell(
+                                                onTap: () {
+                                                  setState(() {
+                                                    _selectedStationId = stId;
+                                                  });
+                                                },
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                                  decoration: BoxDecoration(
+                                                    color: isSelected ? _greenAccent.withOpacity(0.12) : Colors.transparent,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: isSelected ? Border.all(color: _greenAccent) : null,
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                                        color: isSelected ? _greenAccent : Colors.white38,
+                                                        size: 18,
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              st['station_name'] ?? 'Estação',
+                                                              style: GoogleFonts.shareTechMono(
+                                                                color: isSelected ? _greenAccent : Colors.white,
+                                                                fontSize: 13,
+                                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              'ÓRBITA: ${st['orbit_name'] ?? 'Desconhecida'}',
+                                                              style: GoogleFonts.shareTechMono(
+                                                                color: Colors.white54,
+                                                                fontSize: 10,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        '#$stId',
+                                                        style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 11),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Barra inferior com botões de ação
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _panelBg,
+                border: Border(top: BorderSide(color: _greenAccent.withOpacity(0.3))),
+              ),
+              child: Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _currentView = 'initial';
+                      });
+                    },
+                    icon: const Icon(Icons.arrow_back, size: 16, color: Colors.white70),
+                    label: Text(
+                      'VOLTAR',
+                      style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 12),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white24),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: canSubmit ? _submitCreateCorporation : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _greenAccent.withOpacity(0.2),
+                        foregroundColor: _greenAccent,
+                        side: BorderSide(
+                          color: canSubmit ? _greenAccent : Colors.white12,
+                          width: 1.2,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      icon: _isSubmittingAction
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: _greenAccent),
+                            )
+                          : const Icon(Icons.add_business_outlined, size: 18),
+                      label: Text(
+                        !hasEnoughCredits
+                            ? 'SALDO INSUFICIENTE (1.000.000 CR)'
+                            : !isNameValid
+                                ? 'INFORME O NOME DA CORP'
+                                : _selectedStationId == null
+                                    ? 'SELECIONE A ESTAÇÃO BASE'
+                                    : 'FUNDAR CORPORAÇÃO (1.000.000 CR)',
+                        style: GoogleFonts.shareTechMono(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMetaPill(IconData icon, String label, String value) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1475,62 +2225,6 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Visão temporária para telas filhas (preparação para passo 4)
-  Widget _buildPlaceholderSubView(String title, String subtitle, IconData icon) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(24),
-        padding: const EdgeInsets.all(24),
-        constraints: const BoxConstraints(maxWidth: 520),
-        decoration: BoxDecoration(
-          color: _panelBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _cyanColor.withOpacity(0.4)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: _cyanColor, size: 48),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.shareTechMono(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _currentView = 'initial';
-                });
-              },
-              icon: const Icon(Icons.arrow_back, size: 16, color: _cyanColor),
-              label: Text(
-                'VOLTAR AO MENU DE OPÇÕES',
-                style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 12),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _cyanColor),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
