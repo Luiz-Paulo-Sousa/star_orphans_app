@@ -88,9 +88,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   /// Busca as estações da tabela orbit_stations no backend (exclusivamente do banco de dados)
   Future<void> _fetchStations() async {
     try {
-      final res = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/stations'),
-      ).timeout(const Duration(seconds: 4));
+      final res = await http
+          .get(Uri.parse('${widget.apiBaseUrl}/api/stations'))
+          .timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
@@ -108,7 +108,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           });
         }
       } else {
-        debugPrint('[CONTRATOS] Falha ao carregar orbit_stations: status ${res.statusCode}');
+        debugPrint(
+          '[CONTRATOS] Falha ao carregar orbit_stations: status ${res.statusCode}',
+        );
       }
     } catch (e) {
       debugPrint('[CONTRATOS] Erro ao buscar orbit_stations: $e');
@@ -119,8 +121,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   int _getPilotTierForCareer(String career) {
     final skills = (widget.profileData?['skills'] as Map?) ?? {};
     final rawVal = skills[career.toLowerCase()] ?? 0;
-    final int score = (rawVal is num) ? rawVal.toInt() : int.tryParse(rawVal.toString()) ?? 0;
-    
+    final int score =
+        (rawVal is num) ? rawVal.toInt() : int.tryParse(rawVal.toString()) ?? 0;
+
     if (score >= 80) return 5;
     if (score >= 60) return 4;
     if (score >= 40) return 3;
@@ -235,17 +238,30 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     final pilotUid = _getPilotUid();
 
     try {
-      final resAvailable = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/contracts/available?pilot_uid=$pilotUid'),
-      ).timeout(const Duration(seconds: 3), onTimeout: () => http.Response('[]', 404));
+      final resAvailable = await http
+          .get(
+            Uri.parse(
+              '${widget.apiBaseUrl}/api/contracts/available?pilot_uid=$pilotUid',
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => http.Response('[]', 404),
+          );
 
-      final resActive = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/contracts/active/$pilotUid'),
-      ).timeout(const Duration(seconds: 3), onTimeout: () => http.Response('[]', 404));
+      final resActive = await http
+          .get(Uri.parse('${widget.apiBaseUrl}/api/contracts/active/$pilotUid'))
+          .timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => http.Response('[]', 404),
+          );
 
-      final resCreated = await http.get(
-        Uri.parse('${widget.apiBaseUrl}/api/contracts/issuer/$pilotUid'),
-      ).timeout(const Duration(seconds: 3), onTimeout: () => http.Response('[]', 404));
+      final resCreated = await http
+          .get(Uri.parse('${widget.apiBaseUrl}/api/contracts/issuer/$pilotUid'))
+          .timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => http.Response('[]', 404),
+          );
 
       if (resAvailable.statusCode == 200 &&
           resActive.statusCode == 200 &&
@@ -282,7 +298,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 2,
           'contract_type': 'mining',
           'title': 'Extração de Minério Raro em Kali-3',
-          'description': 'Necessário extrair e entregar 150 unidades de Cristais de Hélio-3 na Agartha Commercial Station.',
+          'description':
+              'Necessário extrair e entregar 150 unidades de Cristais de Hélio-3 na Agartha Commercial Station.',
           'origin_station_id': null,
           'destination_station_id': 1,
           'destination_station_name': 'Agartha Commercial Station',
@@ -306,7 +323,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 1,
           'contract_type': 'courier',
           'title': 'Carga Sensível para Estação Alpha',
-          'description': 'Transporte urgente de peças de propulsores de salto. Não sofra avarias durante o trajeto.',
+          'description':
+              'Transporte urgente de peças de propulsores de salto. Não sofra avarias durante o trajeto.',
           'origin_station_id': 1,
           'origin_station_name': 'Agartha Commercial Station',
           'destination_station_id': 7,
@@ -331,7 +349,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 3,
           'contract_type': 'bounty',
           'title': 'Neutralizar Corsário "Sombra Vermelha"',
-          'description': 'Alvo hostil avistado na órbita externa. Permite cumprimento em esquadrilha. Divisão automática de créditos.',
+          'description':
+              'Alvo hostil avistado na órbita externa. Permite cumprimento em esquadrilha. Divisão automática de créditos.',
           'origin_station_id': null,
           'destination_station_id': null,
           'target_orbit': 5,
@@ -358,7 +377,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 1,
           'contract_type': 'bounty',
           'title': 'Patrulha Armada nos Anéis de Kali',
-          'description': 'Interceptar 5 drones de reconhecimento pirata interceptando sondas mineradoras.',
+          'description':
+              'Interceptar 5 drones de reconhecimento pirata interceptando sondas mineradoras.',
           'reward_credits': 60000,
           'reward_reputation': 80,
           'collateral_credits': 0,
@@ -370,7 +390,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'accepted_at': '2026-11-14 14:00:00',
           'deadline_at': '2026-11-14 15:30:00',
           'status': 'active',
-        }
+        },
       ];
 
       _myCreatedContracts = [
@@ -383,7 +403,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 1,
           'contract_type': 'mining',
           'title': 'Compra de Titânio Bruto (100t)',
-          'description': 'Preciso de titânio bruto entregue na Agartha Foundry Station para reformas estruturais da corporação.',
+          'description':
+              'Preciso de titânio bruto entregue na Agartha Foundry Station para reformas estruturais da corporação.',
           'origin_station_id': null,
           'destination_station_id': 2,
           'destination_station_name': 'Agartha Foundry Station',
@@ -407,7 +428,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'min_career_tier': 2,
           'contract_type': 'bounty',
           'title': 'Eliminar Pirata no Ponto de Salto Delta',
-          'description': 'Contrato aceito pelo piloto "Kaelen-7". Em execução no momento.',
+          'description':
+              'Contrato aceito pelo piloto "Kaelen-7". Em execução no momento.',
           'origin_station_id': null,
           'destination_station_id': null,
           'target_orbit': 4,
@@ -418,7 +440,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'uncancellable': 'n',
           'status': 'in_progress',
           'assigned_to': 'Kaelen-7',
-        }
+        },
       ];
 
       // Garante que SEMPRE começa na lista de contratos
@@ -428,22 +450,30 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   }
 
   // Filtragem local dos contratos
-  List<Map<String, dynamic>> _getFilteredContracts(List<Map<String, dynamic>> list) {
+  List<Map<String, dynamic>> _getFilteredContracts(
+    List<Map<String, dynamic>> list,
+  ) {
     return list.where((contract) {
       if (_filterCareer != 'TODAS') {
-        if (contract['target_career']?.toString().toLowerCase() != _filterCareer.toLowerCase()) {
+        if (contract['target_career']?.toString().toLowerCase() !=
+            _filterCareer.toLowerCase()) {
           return false;
         }
       }
       if (_filterType != 'TODOS') {
-        if (contract['contract_type']?.toString().toLowerCase() != _filterType.toLowerCase()) {
+        if (contract['contract_type']?.toString().toLowerCase() !=
+            _filterType.toLowerCase()) {
           return false;
         }
       }
       if (_filterStation != 'TODAS') {
         final stFilter = _filterStation.toLowerCase();
-        final orig = (contract['origin_station_name'] ?? '').toString().toLowerCase();
-        final dest = (contract['destination_station_name'] ?? '').toString().toLowerCase();
+        final orig =
+            (contract['origin_station_name'] ?? '').toString().toLowerCase();
+        final dest =
+            (contract['destination_station_name'] ?? '')
+                .toString()
+                .toLowerCase();
         if (!orig.contains(stFilter) && !dest.contains(stFilter)) {
           return false;
         }
@@ -452,10 +482,15 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       if (search.isNotEmpty) {
         final title = (contract['title'] ?? '').toString().toLowerCase();
         final desc = (contract['description'] ?? '').toString().toLowerCase();
-        final orig = (contract['origin_station_name'] ?? '').toString().toLowerCase();
-        final dest = (contract['destination_station_name'] ?? '').toString().toLowerCase();
+        final orig =
+            (contract['origin_station_name'] ?? '').toString().toLowerCase();
+        final dest =
+            (contract['destination_station_name'] ?? '')
+                .toString()
+                .toLowerCase();
         final issuer = (contract['issuer_name'] ?? '').toString().toLowerCase();
-        final item = (contract['target_item_name'] ?? '').toString().toLowerCase();
+        final item =
+            (contract['target_item_name'] ?? '').toString().toLowerCase();
         if (!title.contains(search) &&
             !desc.contains(search) &&
             !orig.contains(search) &&
@@ -470,7 +505,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   }
 
   void _onAcceptContract(Map<String, dynamic> contract) {
-    final pilotTier = _getPilotTierForCareer(contract['target_career'] ?? 'general');
+    final pilotTier = _getPilotTierForCareer(
+      contract['target_career'] ?? 'general',
+    );
     final minTier = contract['min_career_tier'] ?? 1;
 
     if (pilotTier < minTier) {
@@ -488,57 +525,65 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardBg,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: _cyanColor, width: 1.5),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        title: Text(
-          'CONFIRMAR ACEITE DE CONTRATO',
-          style: GoogleFonts.shareTechMono(
-            color: _cyanColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        content: Text(
-          'Deseja aceitar a missão "${contract['title']}"?\n\n'
-          'Recompensa: ${_formatCredits(contract['reward_credits'])} CR\n'
-          'Caução: ${_formatCredits(contract['collateral_credits'])} CR',
-          style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'CANCELAR',
-              style: GoogleFonts.shareTechMono(color: Colors.white54),
+      builder:
+          (ctx) => AlertDialog(
+            backgroundColor: _cardBg,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: _cyanColor, width: 1.5),
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _greenAccent),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeAcceptContract(contract);
-            },
-            child: Text(
-              'ACEITAR MISSÃO',
+            title: Text(
+              'CONFIRMAR ACEITE DE CONTRATO',
               style: GoogleFonts.shareTechMono(
-                color: Colors.black,
+                color: _cyanColor,
                 fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
+            content: Text(
+              'Deseja aceitar a missão "${contract['title']}"?\n\n'
+              'Recompensa: ${_formatCredits(contract['reward_credits'])} CR\n'
+              'Caução: ${_formatCredits(contract['collateral_credits'])} CR',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'CANCELAR',
+                  style: GoogleFonts.shareTechMono(color: Colors.white54),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _greenAccent),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _executeAcceptContract(contract);
+                },
+                child: Text(
+                  'ACEITAR MISSÃO',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _executeAcceptContract(Map<String, dynamic> contract) {
     setState(() {
-      _availableContracts.removeWhere((c) => c['contract_uid'] == contract['contract_uid']);
-      final Map<String, dynamic> newActive = Map<String, dynamic>.from(contract);
+      _availableContracts.removeWhere(
+        (c) => c['contract_uid'] == contract['contract_uid'],
+      );
+      final Map<String, dynamic> newActive = Map<String, dynamic>.from(
+        contract,
+      );
       newActive['status'] = 'active';
       newActive['current_progress'] = 0;
       newActive['target_progress'] = 1;
@@ -553,7 +598,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
         backgroundColor: _greenAccent,
         content: Text(
           'Contrato aceito com sucesso! Verifique em "Meus Contratos Ativos".',
-          style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+          style: GoogleFonts.shareTechMono(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -575,65 +623,71 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardBg,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: _redAccent, width: 1.5),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        title: Text(
-          'ABANDONAR MISSÃO',
-          style: GoogleFonts.shareTechMono(
-            color: _redAccent,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        content: Text(
-          'Tem certeza que deseja abandonar a missão "${contract['title']}"?\n\n'
-          'Atenção: Quaisquer cauções depositadas poderão ser perdidas e haverá penalidade de reputação.',
-          style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'VOLTAR',
-              style: GoogleFonts.shareTechMono(color: Colors.white54),
+      builder:
+          (ctx) => AlertDialog(
+            backgroundColor: _cardBg,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: _redAccent, width: 1.5),
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() {
-                _activeContracts.removeWhere((c) => c['contract_uid'] == contract['contract_uid']);
-                final backToAvail = Map<String, dynamic>.from(contract);
-                backToAvail['status'] = 'available';
-                _availableContracts.add(backToAvail);
-                _selectedContract = null; // Volta para a lista!
-              });
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: _redAccent,
-                  content: Text(
-                    'Missão abandonada.',
-                    style: GoogleFonts.shareTechMono(color: Colors.white),
-                  ),
-                ),
-              );
-            },
-            child: Text(
-              'CONFIRMAR ABANDONO',
+            title: Text(
+              'ABANDONAR MISSÃO',
               style: GoogleFonts.shareTechMono(
-                color: Colors.white,
+                color: _redAccent,
                 fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
+            content: Text(
+              'Tem certeza que deseja abandonar a missão "${contract['title']}"?\n\n'
+              'Atenção: Quaisquer cauções depositadas poderão ser perdidas e haverá penalidade de reputação.',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'VOLTAR',
+                  style: GoogleFonts.shareTechMono(color: Colors.white54),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _activeContracts.removeWhere(
+                      (c) => c['contract_uid'] == contract['contract_uid'],
+                    );
+                    final backToAvail = Map<String, dynamic>.from(contract);
+                    backToAvail['status'] = 'available';
+                    _availableContracts.add(backToAvail);
+                    _selectedContract = null; // Volta para a lista!
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      backgroundColor: _redAccent,
+                      content: Text(
+                        'Missão abandonada.',
+                        style: GoogleFonts.shareTechMono(color: Colors.white),
+                      ),
+                    ),
+                  );
+                },
+                child: Text(
+                  'CONFIRMAR ABANDONO',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -647,9 +701,12 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           if (_mainMode == 'CONTRATADO') _buildContractorSubTabs(),
           if (_showFiltersBar) _buildFiltersBar(),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: _cyanColor))
-                : _buildMainBody(),
+            child:
+                _isLoading
+                    ? const Center(
+                      child: CircularProgressIndicator(color: _cyanColor),
+                    )
+                    : _buildMainBody(),
           ),
         ],
       ),
@@ -670,7 +727,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           ),
           decoration: const BoxDecoration(
             color: _panelBg,
-            border: Border(bottom: BorderSide(color: Color(0x3300D2FF), width: 1.2)),
+            border: Border(
+              bottom: BorderSide(color: Color(0x3300D2FF), width: 1.2),
+            ),
           ),
           child: Row(
             children: [
@@ -715,7 +774,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: _showFiltersBar ? _cyanColor.withValues(alpha: 0.2) : _cardBg,
+                    color:
+                        _showFiltersBar
+                            ? _cyanColor.withValues(alpha: 0.2)
+                            : _cardBg,
                     border: Border.all(
                       color: _showFiltersBar ? _cyanColor : Colors.white24,
                       width: 1,
@@ -735,7 +797,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                         Text(
                           'FILTROS',
                           style: GoogleFonts.shareTechMono(
-                            color: _showFiltersBar ? _cyanColor : Colors.white70,
+                            color:
+                                _showFiltersBar ? _cyanColor : Colors.white70,
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
@@ -765,7 +828,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       borderRadius: BorderRadius.circular(4),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: EdgeInsets.symmetric(vertical: 8, horizontal: isCompact ? 6 : 10),
+        padding: EdgeInsets.symmetric(
+          vertical: 8,
+          horizontal: isCompact ? 6 : 10,
+        ),
         decoration: BoxDecoration(
           color: isSelected ? _cyanColor.withValues(alpha: 0.15) : _cardBg,
           border: Border.all(
@@ -773,15 +839,16 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             width: isSelected ? 1.8 : 1.0,
           ),
           borderRadius: BorderRadius.circular(4),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _cyanColor.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  )
-                ]
-              : null,
+          boxShadow:
+              isSelected
+                  ? [
+                    BoxShadow(
+                      color: _cyanColor.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                  : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -895,7 +962,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
-                color: isSelected ? _greenAccent.withValues(alpha: 0.2) : Colors.white10,
+                color:
+                    isSelected
+                        ? _greenAccent.withValues(alpha: 0.2)
+                        : Colors.white10,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -930,22 +1000,43 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   // Filtro por Carreira
                   Text(
                     'CARREIRA:',
-                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10.5),
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10.5,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   DropdownButton<String>(
                     value: _filterCareer,
                     dropdownColor: _cardBg,
                     isDense: true,
-                    style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11),
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11,
+                    ),
                     underline: const SizedBox(),
                     items: const [
                       DropdownMenuItem(value: 'TODAS', child: Text('TODAS')),
-                      DropdownMenuItem(value: 'mercenary', child: Text('MERCENÁRIO')),
-                      DropdownMenuItem(value: 'extractor', child: Text('EXTRATOR')),
-                      DropdownMenuItem(value: 'merchant', child: Text('COMERCIANTE')),
-                      DropdownMenuItem(value: 'engineer', child: Text('ENGENHEIRO')),
-                      DropdownMenuItem(value: 'corporate', child: Text('CORPORATIVO')),
+                      DropdownMenuItem(
+                        value: 'mercenary',
+                        child: Text('MERCENÁRIO'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'extractor',
+                        child: Text('EXTRATOR'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'merchant',
+                        child: Text('COMERCIANTE'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'engineer',
+                        child: Text('ENGENHEIRO'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'corporate',
+                        child: Text('CORPORATIVO'),
+                      ),
                       DropdownMenuItem(value: 'general', child: Text('GERAL')),
                     ],
                     onChanged: (val) {
@@ -956,22 +1047,37 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   // Filtro por Tipo de Contrato
                   Text(
                     'TIPO:',
-                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10.5),
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10.5,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   DropdownButton<String>(
                     value: _filterType,
                     dropdownColor: _cardBg,
                     isDense: true,
-                    style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11),
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11,
+                    ),
                     underline: const SizedBox(),
                     items: const [
                       DropdownMenuItem(value: 'TODOS', child: Text('TODOS')),
                       DropdownMenuItem(value: 'bounty', child: Text('BOUNTY')),
-                      DropdownMenuItem(value: 'courier', child: Text('COURIER')),
+                      DropdownMenuItem(
+                        value: 'courier',
+                        child: Text('COURIER'),
+                      ),
                       DropdownMenuItem(value: 'mining', child: Text('MINING')),
-                      DropdownMenuItem(value: 'crafting', child: Text('CRAFTING')),
-                      DropdownMenuItem(value: 'corporate_emergency', child: Text('EMERGÊNCIA')),
+                      DropdownMenuItem(
+                        value: 'crafting',
+                        child: Text('CRAFTING'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'corporate_emergency',
+                        child: Text('EMERGÊNCIA'),
+                      ),
                     ],
                     onChanged: (val) {
                       if (val != null) setState(() => _filterType = val);
@@ -985,24 +1091,34 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   // Filtro por Estação (orbit_stations)
                   Text(
                     'ESTAÇÃO:',
-                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10.5),
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10.5,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   Expanded(
                     flex: isCompact ? 5 : 4,
                     child: DropdownButton<String>(
-                      value: _stationOptions.contains(_filterStation) ? _filterStation : 'TODAS',
+                      value:
+                          _stationOptions.contains(_filterStation)
+                              ? _filterStation
+                              : 'TODAS',
                       dropdownColor: _cardBg,
                       isDense: true,
                       isExpanded: true,
-                      style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11),
+                      style: GoogleFonts.shareTechMono(
+                        color: _cyanColor,
+                        fontSize: 11,
+                      ),
                       underline: const SizedBox(),
-                      items: _stationOptions.map((st) {
-                        return DropdownMenuItem<String>(
-                          value: st,
-                          child: Text(st, overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
+                      items:
+                          _stationOptions.map((st) {
+                            return DropdownMenuItem<String>(
+                              value: st,
+                              child: Text(st, overflow: TextOverflow.ellipsis),
+                            );
+                          }).toList(),
                       onChanged: (val) {
                         if (val != null) setState(() => _filterStation = val);
                       },
@@ -1017,12 +1133,25 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       child: TextField(
                         controller: _searchController,
                         onChanged: (_) => setState(() {}),
-                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Buscar...',
-                          hintStyle: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 10.5),
-                          prefixIcon: const Icon(Icons.search, size: 14, color: _cyanColor),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                          hintStyle: GoogleFonts.shareTechMono(
+                            color: Colors.white30,
+                            fontSize: 10.5,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            size: 14,
+                            color: _cyanColor,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 0,
+                          ),
                           filled: true,
                           fillColor: _cardBg,
                           border: OutlineInputBorder(
@@ -1046,7 +1175,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   Widget _buildMainBody() {
     List<Map<String, dynamic>> targetList = [];
     if (_mainMode == 'CONTRATADO') {
-      targetList = _contractorSubTab == 'DISPONIVEIS' ? _availableContracts : _activeContracts;
+      targetList =
+          _contractorSubTab == 'DISPONIVEIS'
+              ? _availableContracts
+              : _activeContracts;
     } else {
       targetList = _myCreatedContracts;
     }
@@ -1069,9 +1201,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               // Divisor Vertical
               Container(width: 1, color: _cyanColor.withValues(alpha: 0.2)),
               // Coluna da Direita: Painel de Detalhes
-              Expanded(
-                child: _buildContractDetailPanel(),
-              ),
+              Expanded(child: _buildContractDetailPanel()),
             ],
           );
         } else {
@@ -1110,7 +1240,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _cyanColor.withValues(alpha: 0.2),
                         side: const BorderSide(color: _cyanColor),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       onPressed: () {
@@ -1119,7 +1251,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                             backgroundColor: _cyanColor,
                             content: Text(
                               'Formulário de Criação de Contratos será configurado na Parte 2!',
-                              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         );
@@ -1139,22 +1274,28 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               ),
             ),
           Expanded(
-            child: list.isEmpty
-                ? Center(
-                    child: Text(
-                      'Nenhum contrato encontrado.',
-                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+            child:
+                list.isEmpty
+                    ? Center(
+                      child: Text(
+                        'Nenhum contrato encontrado.',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white38,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.all(8),
+                      itemCount: list.length,
+                      itemBuilder: (context, index) {
+                        final contract = list[index];
+                        final isSelected =
+                            _selectedContract?['contract_uid'] ==
+                            contract['contract_uid'];
+                        return _buildContractCard(contract, isSelected);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: list.length,
-                    itemBuilder: (context, index) {
-                      final contract = list[index];
-                      final isSelected = _selectedContract?['contract_uid'] == contract['contract_uid'];
-                      return _buildContractCard(contract, isSelected);
-                    },
-                  ),
           ),
         ],
       ),
@@ -1164,7 +1305,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   /// Card de Contrato individual
   Widget _buildContractCard(Map<String, dynamic> contract, bool isSelected) {
     final careerColor = _getCareerColor(contract['target_career']);
-    final bool isActiveMode = _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
+    final bool isActiveMode =
+        _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
 
     return InkWell(
       onTap: () {
@@ -1182,15 +1324,16 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             width: isSelected ? 1.5 : 1.0,
           ),
           borderRadius: BorderRadius.circular(4),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _cyanColor.withValues(alpha: 0.15),
-                    blurRadius: 6,
-                    spreadRadius: 1,
-                  )
-                ]
-              : null,
+          boxShadow:
+              isSelected
+                  ? [
+                    BoxShadow(
+                      color: _cyanColor.withValues(alpha: 0.15),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                  : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1200,7 +1343,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: careerColor.withValues(alpha: 0.2),
                     border: Border.all(color: careerColor, width: 0.8),
@@ -1242,13 +1388,19 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             if (contract['contract_type'] == 'courier') ...[
               Text(
                 'Rota: ${contract['origin_station_name'] ?? 'Origem'} ➔ ${contract['destination_station_name'] ?? 'Destino'}',
-                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ] else ...[
               Text(
                 'Tipo: ${_getTypeLabel(contract['contract_type'])} · Exige Tier ${contract['min_career_tier'] ?? 1}',
-                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
               ),
             ],
             // Barra de Progresso se for Ativo
@@ -1265,11 +1417,19 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               Align(
                 alignment: Alignment.centerRight,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(contract['status']).withValues(alpha: 0.15),
+                    color: _getStatusColor(
+                      contract['status'],
+                    ).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(2),
-                    border: Border.all(color: _getStatusColor(contract['status']), width: 0.6),
+                    border: Border.all(
+                      color: _getStatusColor(contract['status']),
+                      width: 0.6,
+                    ),
                   ),
                   child: Text(
                     _getStatusLabel(contract['status']),
@@ -1298,11 +1458,17 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           children: [
             Text(
               'Progresso: $current / $target',
-              style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white70,
+                fontSize: 10,
+              ),
             ),
             Text(
               '${(pct * 100).toInt()}%',
-              style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 10),
+              style: GoogleFonts.shareTechMono(
+                color: _greenAccent,
+                fontSize: 10,
+              ),
             ),
           ],
         ),
@@ -1330,11 +1496,18 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.assignment_outlined, color: Colors.white24, size: 48),
+              const Icon(
+                Icons.assignment_outlined,
+                color: Colors.white24,
+                size: 48,
+              ),
               const SizedBox(height: 12),
               Text(
                 'Selecione um contrato na lista para ver os detalhes operacionais.',
-                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 13),
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white38,
+                  fontSize: 13,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1346,7 +1519,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     final careerColor = _getCareerColor(contract['target_career']);
     final bool isBounty = contract['contract_type'] == 'bounty';
     final bool isCourier = contract['contract_type'] == 'courier';
-    final bool isActive = _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
+    final bool isActive =
+        _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
 
     return Container(
       color: _panelBg,
@@ -1363,7 +1537,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   onTap: onBackToList,
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: _cyanColor.withValues(alpha: 0.1),
                       border: Border.all(color: _cyanColor, width: 0.8),
@@ -1372,7 +1549,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.arrow_back, color: _cyanColor, size: 16),
+                        const Icon(
+                          Icons.arrow_back,
+                          color: _cyanColor,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'VOLTAR PARA A LISTA',
@@ -1391,7 +1572,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: careerColor.withValues(alpha: 0.2),
                     border: Border.all(color: careerColor),
@@ -1408,21 +1592,30 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white10,
                     borderRadius: BorderRadius.circular(2),
                   ),
                   child: Text(
                     _getTypeLabel(contract['contract_type']),
-                    style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11),
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white70,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
                 const Spacer(),
                 if (contract['target_orbit'] != null)
                   Text(
                     'ÓRBITA ${contract['target_orbit']}',
-                    style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 12),
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 12,
+                    ),
                   ),
               ],
             ),
@@ -1441,7 +1634,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             // Emissor
             Text(
               'EMITIDO POR: ${(contract['issuer_name'] ?? contract['issuer_type'] ?? 'DESCONHECIDO').toString().toUpperCase()}',
-              style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white38,
+                fontSize: 11,
+              ),
             ),
             const SizedBox(height: 14),
             // Descrição
@@ -1455,7 +1651,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               ),
               child: Text(
                 contract['description'] ?? 'Sem descrição detalhada.',
-                style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 12.5, height: 1.4),
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white70,
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -1471,28 +1671,53 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.group_outlined, color: _redAccent, size: 20),
+                    const Icon(
+                      Icons.group_outlined,
+                      color: _redAccent,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'MISSÃO DE ESQUADRILHA: Pode ser cumprida em grupo. Créditos são divididos igualmente; itens vão para o líder da esquadrilha.',
-                        style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11),
+                        style: GoogleFonts.shareTechMono(
+                          color: _redAccent,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
             // Seção de Especificações / Rota
-            _buildInfoRow('EXIGÊNCIA DE CARREIRA', '${_getCareerLabel(contract['target_career'])} (Tier mínimo ${contract['min_career_tier'] ?? 1})'),
+            _buildInfoRow(
+              'EXIGÊNCIA DE CARREIRA',
+              '${_getCareerLabel(contract['target_career'])} (Tier mínimo ${contract['min_career_tier'] ?? 1})',
+            ),
             if (isCourier) ...[
-              _buildInfoRow('ESTAÇÃO DE ORIGEM', contract['origin_station_name'] ?? 'Não informada'),
-              _buildInfoRow('ESTAÇÃO DE DESTINO', contract['destination_station_name'] ?? 'Não informada'),
-              _buildInfoRow('CAUÇÃO EXIGIDA', '${_formatCredits(contract['collateral_credits'])} CR'),
+              _buildInfoRow(
+                'ESTAÇÃO DE ORIGEM',
+                contract['origin_station_name'] ?? 'Não informada',
+              ),
+              _buildInfoRow(
+                'ESTAÇÃO DE DESTINO',
+                contract['destination_station_name'] ?? 'Não informada',
+              ),
+              _buildInfoRow(
+                'CAUÇÃO EXIGIDA',
+                '${_formatCredits(contract['collateral_credits'])} CR',
+              ),
             ],
             if (contract['target_item_name'] != null)
-              _buildInfoRow('ITEM ALVO', '${contract['target_amount'] ?? 1}x ${contract['target_item_name']}'),
+              _buildInfoRow(
+                'ITEM ALVO',
+                '${contract['target_amount'] ?? 1}x ${contract['target_item_name']}',
+              ),
             if (contract['duration_seconds'] != null)
-              _buildInfoRow('DURAÇÃO MÁXIMA', '${(contract['duration_seconds'] / 3600).toStringAsFixed(1)} HORAS'),
+              _buildInfoRow(
+                'DURAÇÃO MÁXIMA',
+                '${(contract['duration_seconds'] / 3600).toStringAsFixed(1)} HORAS',
+              ),
             const SizedBox(height: 14),
             // Bloco de Recompensas
             Container(
@@ -1507,22 +1732,42 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                 children: [
                   Column(
                     children: [
-                      Text('RECOMPENSA EM CRÉDITOS', style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10)),
+                      Text(
+                        'RECOMPENSA EM CRÉDITOS',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         '${_formatCredits(contract['reward_credits'])} CR',
-                        style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 15, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.shareTechMono(
+                          color: _amberAccent,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
                   Container(width: 1, height: 30, color: Colors.white12),
                   Column(
                     children: [
-                      Text('REPUTAÇÃO', style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10)),
+                      Text(
+                        'REPUTAÇÃO',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         '+${contract['reward_reputation'] ?? 0}',
-                        style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 15, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.shareTechMono(
+                          color: _greenAccent,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
@@ -1544,12 +1789,22 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11)),
+          Text(
+            label,
+            style: GoogleFonts.shareTechMono(
+              color: Colors.white38,
+              fontSize: 11,
+            ),
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               value,
-              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+              style: GoogleFonts.shareTechMono(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.end,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1559,7 +1814,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     );
   }
 
-  Widget _buildBottomActionButtons(Map<String, dynamic> contract, bool isActive) {
+  Widget _buildBottomActionButtons(
+    Map<String, dynamic> contract,
+    bool isActive,
+  ) {
     if (_mainMode == 'CONTRATADO') {
       if (isActive) {
         // Botão para Abandonar Missão Ativa
@@ -1570,10 +1828,16 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _redAccent.withValues(alpha: 0.2),
               side: const BorderSide(color: _redAccent, width: 1.2),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             onPressed: () => _onAbandonContract(contract),
-            icon: const Icon(Icons.cancel_outlined, color: _redAccent, size: 18),
+            icon: const Icon(
+              Icons.cancel_outlined,
+              color: _redAccent,
+              size: 18,
+            ),
             label: Text(
               'ABANDONAR MISSÃO ATIVA',
               style: GoogleFonts.shareTechMono(
@@ -1592,10 +1856,16 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: _greenAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             onPressed: () => _onAcceptContract(contract),
-            icon: const Icon(Icons.check_circle_outline, color: Colors.black, size: 18),
+            icon: const Icon(
+              Icons.check_circle_outline,
+              color: Colors.black,
+              size: 18,
+            ),
             label: Text(
               'ACEITAR ESTE CONTRATO',
               style: GoogleFonts.shareTechMono(
@@ -1615,7 +1885,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _cyanColor),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: () {
@@ -1631,7 +1903,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               },
               child: Text(
                 'EDITAR CONTRATO',
-                style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11.5, fontWeight: FontWeight.bold),
+                style: GoogleFonts.shareTechMono(
+                  color: _cyanColor,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -1640,7 +1916,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _redAccent),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: () {
@@ -1656,7 +1934,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               },
               child: Text(
                 'CANCELAR CONTRATO',
-                style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11.5, fontWeight: FontWeight.bold),
+                style: GoogleFonts.shareTechMono(
+                  color: _redAccent,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
