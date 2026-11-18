@@ -822,97 +822,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
     return Container(
       color: _darkBg,
-      child: Column(
-        children: [
-          _buildHeaderBar(effectiveHasCorp),
-          Expanded(
-            child: effectiveHasCorp
-                ? _buildAffiliatedView()
-                : _buildFreelancerView(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Barra superior do módulo
-  Widget _buildHeaderBar(bool effectiveHasCorp) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        border: Border(bottom: BorderSide(color: _cyanColor.withOpacity(0.3), width: 1)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.corporate_fare_outlined, color: _cyanColor, size: 20),
-          const SizedBox(width: 10),
-          Text(
-            'MÓDULO DE CORPORAÇÃO',
-            style: GoogleFonts.shareTechMono(
-              color: _cyanColor,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const Spacer(),
-
-          // Botão de simulação para testes rápidos no VS Code
-          if (_hasCorporation)
-            InkWell(
-              onTap: () {
-                setState(() {
-                  _simulateNoCorporation = !_simulateNoCorporation;
-                  _currentView = 'initial';
-                });
-              },
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _simulateNoCorporation
-                      ? _amberAccent.withOpacity(0.2)
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: _simulateNoCorporation ? _amberAccent : Colors.white24,
-                    width: 1,
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _simulateNoCorporation ? Icons.check_box : Icons.check_box_outline_blank,
-                      color: _simulateNoCorporation ? _amberAccent : Colors.white54,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'TESTE SEM CORP',
-                      style: GoogleFonts.shareTechMono(
-                        color: _simulateNoCorporation ? _amberAccent : Colors.white54,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(width: 8),
-
-          IconButton(
-            icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
-            tooltip: 'Atualizar',
-            onPressed: () => _fetchCorporationStatus(),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
+      child: effectiveHasCorp
+          ? _buildAffiliatedView()
+          : _buildFreelancerView(),
     );
   }
 
@@ -947,33 +859,43 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Badge de status
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _amberAccent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: _amberAccent.withOpacity(0.6)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.person_outline, color: _amberAccent, size: 14),
-                      const SizedBox(width: 6),
-                      Text(
-                        'STATUS: FREELANCER INDEPENDENTE',
-                        style: GoogleFonts.shareTechMono(
-                          color: _amberAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.1,
+              // Badge de status e botão de atualização
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _amberAccent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _amberAccent.withOpacity(0.6)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_outline, color: _amberAccent, size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          'STATUS: FREELANCER INDEPENDENTE',
+                          style: GoogleFonts.shareTechMono(
+                            color: _amberAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
+                    tooltip: 'Atualizar Dados',
+                    onPressed: () => _fetchCorporationStatus(),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
 
@@ -1439,33 +1361,43 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Badge de status pendente
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _amberAccent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: _amberAccent.withOpacity(0.7)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.hourglass_top_rounded, color: _amberAccent, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'STATUS: SOLICITAÇÃO PENDENTE DE APROVAÇÃO',
-                        style: GoogleFonts.shareTechMono(
-                          color: _amberAccent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.1,
+              // Badge de status pendente e botão de atualização
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _amberAccent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _amberAccent.withOpacity(0.7)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.hourglass_top_rounded, color: _amberAccent, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'STATUS: SOLICITAÇÃO PENDENTE DE APROVAÇÃO',
+                          style: GoogleFonts.shareTechMono(
+                            color: _amberAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
+                    tooltip: 'Atualizar Dados',
+                    onPressed: () => _fetchCorporationStatus(),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -2236,6 +2168,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final String role = (corp['role'] ?? 'Membro').toString().toUpperCase();
     final String stationName = corp['station_name'] ?? 'Não Definida';
     final String founderName = corp['founder_name'] ?? 'Desconhecido';
+    final num corpCredits = corp['credits'] ?? corp['corporation_credits'] ?? 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -2246,7 +2179,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: _panelBg,
                   borderRadius: BorderRadius.circular(8),
@@ -2260,8 +2193,8 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.shield_outlined, color: _cyanColor, size: 28),
-                        const SizedBox(width: 12),
+                        const Icon(Icons.shield_outlined, color: _cyanColor, size: 24),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2270,46 +2203,77 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                                 corpName.toUpperCase(),
                                 style: GoogleFonts.shareTechMono(
                                   color: Colors.white,
-                                  fontSize: 18,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.3,
+                                  letterSpacing: 1.2,
                                 ),
                               ),
                               Text(
                                 'SUA CORPORAÇÃO ATIVA',
                                 style: GoogleFonts.shareTechMono(
                                   color: _greenAccent,
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _cyanColor.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: _cyanColor.withOpacity(0.5)),
-                          ),
-                          child: Text(
-                            role,
-                            style: GoogleFonts.shareTechMono(
-                              color: _cyanColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
+                              tooltip: 'Atualizar Dados',
+                              onPressed: () => _fetchCorporationStatus(),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _cyanColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: _cyanColor.withOpacity(0.5)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.military_tech_outlined, color: _cyanColor, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    role,
+                                    style: GoogleFonts.shareTechMono(
+                                      color: _cyanColor,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const Divider(color: Colors.white24, height: 26),
+                    const Divider(color: Colors.white24, height: 16),
                     _buildInfoRow('ESTAÇÃO BASE:', stationName),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 5),
                     _buildInfoRow('LÍDER FUNDADOR:', founderName),
-                    const SizedBox(height: 8),
-                    _buildInfoRow('STATUS:', 'EM OPERAÇÃO ATIVA'),
+                    const SizedBox(height: 5),
+                    _buildInfoRow(
+                      'SALDO EM CRÉDITOS:',
+                      '${_formatCredits(corpCredits)} CR',
+                      valueColor: _greenAccent,
+                    ),
+                    const SizedBox(height: 5),
+                    _buildInfoRow(
+                      'STATUS:',
+                      'EM OPERAÇÃO ATIVA',
+                      valueColor: _cyanColor,
+                    ),
                   ],
                 ),
               ),
@@ -2320,19 +2284,19 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 12),
+          style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
         ),
         Text(
           value,
           style: GoogleFonts.shareTechMono(
-            color: Colors.white,
-            fontSize: 12,
+            color: valueColor ?? Colors.white,
+            fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
         ),
