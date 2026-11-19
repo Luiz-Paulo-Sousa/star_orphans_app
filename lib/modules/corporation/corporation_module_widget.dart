@@ -2817,7 +2817,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                         ),
                       ],
                     ),
-                    const Divider(color: Colors.white24, height: 12),
+                    const SizedBox(height: 10),
+                    // Abas internas: MEMBROS | ITENS | FINANCEIRO logo abaixo do nome da corporação
+                    _buildAffiliatedTabs(),
+                    const SizedBox(height: 10),
+                    const Divider(color: Colors.white24, height: 1),
+                    const SizedBox(height: 8),
                     _buildInfoRow('ESTAÇÃO BASE:', stationName),
                     const SizedBox(height: 4),
                     // Linha com Líder Fundador e Status juntos, sem espaçamento interno entre label e valor
@@ -2911,11 +2916,6 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 ),
               ),
 
-              const SizedBox(height: 12),
-
-              // Divisão em 3 partes: ADMITIDOS | ITENS | FINANCEIRO
-              _buildAffiliatedTabs(),
-
               const SizedBox(height: 10),
 
               // Conteúdo da aba selecionada
@@ -2984,9 +2984,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? _cyanColor.withOpacity(0.18) : _panelBg,
+          color: isSelected ? _cyanColor.withOpacity(0.18) : _darkBg,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: isSelected ? _cyanColor : Colors.white12,
