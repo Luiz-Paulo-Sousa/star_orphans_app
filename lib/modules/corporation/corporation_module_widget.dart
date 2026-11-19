@@ -270,6 +270,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
   /// Atualiza o cargo de um admitido
   Future<void> _updateMemberRole(dynamic pilotUid, String newRole) async {
+    if (!_isLeaderOrOfficer) return;
     final corpId = _corpUid;
     if (corpId == null) return;
 
@@ -317,6 +318,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
   /// Atualiza a equipe de um admitido
   Future<void> _updateMemberTeam(dynamic pilotUid, int? newTeamUid) async {
+    if (!_isLeaderOrOfficer) return;
     final corpId = _corpUid;
     if (corpId == null) return;
 
@@ -365,6 +367,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
   /// Exclui/desliga um admitido da corporação
   Future<void> _confirmRemoveMember(Map<String, dynamic> member) async {
+    if (!_isLeaderOrOfficer) return;
     final pilotName = member['pilot_name'] ?? 'Piloto';
     final pilotUid = member['pilot_uid'];
     final corpId = _corpUid;
@@ -448,6 +451,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
   /// Abre o modal para gerenciar a tabela corporation_teams
   Future<void> _showTeamsManagementDialog() async {
+    if (!_isLeaderOrOfficer) return;
     final corpId = _corpUid;
     if (corpId == null) return;
 
@@ -2713,13 +2717,28 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     );
   }
 
+  /// Verifica se o jogador logado possui privilégios de gestão (Líder ou Oficial)
+  bool get _isLeaderOrOfficer {
+    final corp = _corporationData ?? {};
+    final myMemberInfo = _corpMembers.firstWhere(
+      (m) => m['pilot_uid'] == _pilotUid,
+      orElse: () => {},
+    );
+    final String myRole = (myMemberInfo['role'] ?? corp['role'] ?? 'member').toString().toLowerCase();
+    return myRole == 'leader' ||
+        myRole == 'officer' ||
+        corp['is_leader'] == true ||
+        myMemberInfo['is_founder'] == true ||
+        myMemberInfo['is_founder'] == 1 ||
+        myMemberInfo['is_founder'] == '1';
+  }
+
   /// Visão caso o jogador já pertença a uma corporação
   Widget _buildAffiliatedView() {
     final corp = _corporationData ?? {};
     final String corpName = corp['name'] ?? 'CORPORAÇÃO';
     final String role = (corp['role'] ?? 'Membro').toString().toUpperCase();
-    final String rawRole = (corp['role'] ?? 'member').toString().toLowerCase();
-    final bool isLeaderOrOfficer = rawRole == 'leader' || rawRole == 'officer' || corp['is_leader'] == true;
+    final bool isLeaderOrOfficer = _isLeaderOrOfficer;
     final String stationName = corp['station_name'] ?? 'Não Definida';
     final String founderName = corp['founder_name'] ?? 'Desconhecido';
     final num corpCredits = num.tryParse(corp['credits']?.toString() ?? corp['corporation_credits']?.toString() ?? '0') ?? 0;
@@ -2943,22 +2962,28 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 ],
               ),
               OutlinedButton.icon(
-                onPressed: _showTeamsManagementDialog,
-                icon: const Icon(Icons.groups_outlined, size: 14, color: _cyanColor),
+                onPressed: isLeaderOrOfficer ? _showTeamsManagementDialog : null,
+                icon: Icon(
+                  Icons.groups_outlined,
+                  size: 14,
+                  color: isLeaderOrOfficer ? _cyanColor : Colors.white24,
+                ),
                 label: Text(
                   'GERENCIAR EQUIPES',
                   style: GoogleFonts.shareTechMono(
-                    color: _cyanColor,
+                    color: isLeaderOrOfficer ? _cyanColor : Colors.white24,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.1,
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _cyanColor.withOpacity(0.5)),
+                  side: BorderSide(
+                    color: isLeaderOrOfficer ? _cyanColor.withOpacity(0.5) : Colors.white10,
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                  backgroundColor: _cyanColor.withOpacity(0.06),
+                  backgroundColor: isLeaderOrOfficer ? _cyanColor.withOpacity(0.06) : Colors.transparent,
                 ),
               ),
             ],
@@ -3301,7 +3326,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     return Material(
       color: isMe ? _cyanColor.withOpacity(0.05) : Colors.transparent,
       child: InkWell(
-        onTap: () => _showMemberDetailsDialog(member),
+        onTap: _isLeaderOrOfficer ? () => _showMemberDetailsDialog(member) : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           child: Row(
@@ -3403,13 +3428,17 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
               ),
               const SizedBox(width: 6),
 
-              // Ícone Lápis para abrir Detalhes
+              // Ícone Lápis para abrir Detalhes (desativado para membros comuns)
               IconButton(
-                icon: const Icon(Icons.edit_outlined, color: _cyanColor, size: 16),
-                tooltip: 'Gerenciar Piloto',
+                icon: Icon(
+                  Icons.edit_outlined,
+                  color: _isLeaderOrOfficer ? _cyanColor : Colors.white24,
+                  size: 16,
+                ),
+                tooltip: _isLeaderOrOfficer ? 'Gerenciar Piloto' : 'Apenas Líder e Oficiais',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                onPressed: () => _showMemberDetailsDialog(member),
+                onPressed: _isLeaderOrOfficer ? () => _showMemberDetailsDialog(member) : null,
               ),
             ],
           ),
@@ -3418,8 +3447,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     );
   }
 
-  /// Diálogo de Detalhes e Gestão do Piloto Admitido
+  /// Diálogo de Detalhes e Gestão do Membro
   Future<void> _showMemberDetailsDialog(Map<String, dynamic> member) async {
+    if (!_isLeaderOrOfficer) return;
     final pilotUid = member['pilot_uid'];
     if (pilotUid == null) return;
 
