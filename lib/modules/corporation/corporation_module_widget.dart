@@ -2718,7 +2718,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final String role = (corp['role'] ?? 'Membro').toString().toUpperCase();
     final String stationName = corp['station_name'] ?? 'Não Definida';
     final String founderName = corp['founder_name'] ?? 'Desconhecido';
-    final num corpCredits = corp['credits'] ?? corp['corporation_credits'] ?? 0;
+    final num corpCredits = num.tryParse(corp['credits']?.toString() ?? corp['corporation_credits']?.toString() ?? '0') ?? 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -3073,7 +3073,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   Widget _buildMemberCard(Map<String, dynamic> member) {
     final pilotName = member['pilot_name']?.toString() ?? 'Piloto';
     final pilotUid = member['pilot_uid'];
-    final isFounder = member['is_founder'] == true;
+    final isFounder = member['is_founder'] == true || member['is_founder'] == 1 || member['is_founder'] == '1';
     final isMe = pilotUid == _pilotUid;
     final joinedAt = _formatDateTime(member['joined_at']);
 
@@ -3215,7 +3215,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   /// Dropdown para selecionar cargo: Líder, Oficial, Membro
   Widget _buildRoleDropdown(Map<String, dynamic> member) {
     final currentRole = member['role']?.toString() ?? 'member';
-    final isFounder = member['is_founder'] == true;
+    final isFounder = member['is_founder'] == true || member['is_founder'] == 1 || member['is_founder'] == '1';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8),
