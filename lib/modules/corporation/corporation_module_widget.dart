@@ -48,10 +48,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   // Sub-abas de Gestão Corporativa: 'admitted' (Controle dos Admitidos), 'items' (Itens), 'finance' (Financeiro)
   String _currentAffiliatedTab = 'admitted';
 
-  // Estados de Gerenciamento de Membros (Controle dos Admitidos)
+  // Estados de Gerenciamento de Membros (Controle dos Membros)
   List<Map<String, dynamic>> _corpMembers = [];
   bool _isLoadingMembers = false;
   String? _membersErrorMessage;
+  String _memberRoleFilter = 'all'; // 'all', 'leader', 'officer', 'member'
+  String _memberTeamFilter = 'all'; // 'all', 'none', ou team_uid
 
   // Estados de Gerenciamento de Equipes (corporation_teams)
   List<Map<String, dynamic>> _corpTeams = [];
@@ -2871,7 +2873,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                             const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 14),
                             const SizedBox(width: 6),
                             Text(
-                              'TOTAL DE ADMITIDOS: ',
+                              'TOTAL DE MEMBROS: ',
                               style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
                             ),
                             Text(
@@ -2944,7 +2946,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       children: [
         Expanded(
           child: _buildTabButton(
-            title: 'ADMITIDOS',
+            title: 'MEMBROS',
             icon: Icons.badge_outlined,
             isSelected: _currentAffiliatedTab == 'admitted',
             onTap: () => setState(() => _currentAffiliatedTab = 'admitted'),
@@ -3059,28 +3061,110 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       );
     }
 
+    final filteredMembers = _corpMembers.where((m) {
+      if (_memberRoleFilter != 'all') {
+        final role = (m['role']?.toString() ?? 'member').toLowerCase();
+        if (role != _memberRoleFilter) return false;
+      }
+      if (_memberTeamFilter != 'all') {
+        if (_memberTeamFilter == 'none') {
+          if (m['team_uid'] != null) return false;
+        } else {
+          if (m['team_uid']?.toString() != _memberTeamFilter) return false;
+        }
+      }
+      return true;
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Cabeçalho da seção com contagem e refresh
+        // Linha com 2 Filtros (Cargo e Equipe) no lugar do antigo label, mais botão de refresh
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'PILOTOS ADMITIDOS (${_corpMembers.length})',
-                  style: GoogleFonts.shareTechMono(
-                    color: _cyanColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
+            // Filtro por Cargo
+            Expanded(
+              child: Container(
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: _panelBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: _memberRoleFilter != 'all' ? _cyanColor : Colors.white12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _memberRoleFilter,
+                    isDense: true,
+                    isExpanded: true,
+                    dropdownColor: _cardBg,
+                    icon: const Icon(Icons.arrow_drop_down, color: _cyanColor, size: 18),
+                    style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('Cargo: Todos')),
+                      DropdownMenuItem(value: 'leader', child: Text('Líder', style: TextStyle(color: _amberAccent))),
+                      DropdownMenuItem(value: 'officer', child: Text('Oficial', style: TextStyle(color: _cyanColor))),
+                      DropdownMenuItem(value: 'member', child: Text('Membro', style: TextStyle(color: Colors.white70))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _memberRoleFilter = val);
+                      }
+                    },
                   ),
                 ),
-              ],
+              ),
             ),
+            const SizedBox(width: 8),
+
+            // Filtro por Equipe
+            Expanded(
+              child: Container(
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: _panelBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: _memberTeamFilter != 'all' ? _greenAccent : Colors.white12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: (_memberTeamFilter == 'all' || _memberTeamFilter == 'none' || _corpTeams.any((t) => t['team_uid'].toString() == _memberTeamFilter))
+                        ? _memberTeamFilter
+                        : 'all',
+                    isDense: true,
+                    isExpanded: true,
+                    dropdownColor: _cardBg,
+                    icon: const Icon(Icons.arrow_drop_down, color: _greenAccent, size: 18),
+                    style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('Equipe: Todas')),
+                      const DropdownMenuItem(value: 'none', child: Text('Sem Equipe', style: TextStyle(color: Colors.white38))),
+                      ..._corpTeams.map((t) {
+                        final tUid = t['team_uid'].toString();
+                        final desc = t['description']?.toString() ?? 'Equipe';
+                        return DropdownMenuItem(
+                          value: tUid,
+                          child: Text(
+                            desc,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _greenAccent),
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _memberTeamFilter = val);
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+
+            // Botão de Refresh da lista
             IconButton(
               icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
               tooltip: 'Atualizar Lista',
@@ -3106,7 +3190,22 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             ),
             child: Center(
               child: Text(
-                'Nenhum piloto admitido na corporação até o momento.',
+                'Nenhum membro na corporação até o momento.',
+                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          )
+        else if (filteredMembers.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: _panelBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Center(
+              child: Text(
+                'Nenhum membro encontrado com os filtros selecionados.',
                 style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
               ),
             ),
@@ -3121,9 +3220,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
-                for (int i = 0; i < _corpMembers.length; i++) ...[
+                for (int i = 0; i < filteredMembers.length; i++) ...[
                   if (i > 0) const Divider(color: Colors.white10, height: 1),
-                  _buildMemberCard(_corpMembers[i]),
+                  _buildMemberCard(filteredMembers[i]),
                 ],
               ],
             ),
@@ -3329,7 +3428,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'DETALHES DO ADMITIDO',
+                    'DETALHES DO MEMBRO',
                     style: GoogleFonts.shareTechMono(
                       color: _cyanColor,
                       fontSize: 14,
