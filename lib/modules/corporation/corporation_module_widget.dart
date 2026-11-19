@@ -3117,238 +3117,500 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     );
   }
 
-  /// Card de cada membro admitido
+  /// Linha compacta (Single-Line) de cada membro admitido
   Widget _buildMemberCard(Map<String, dynamic> member) {
     final pilotName = member['pilot_name']?.toString() ?? 'Piloto';
     final pilotUid = member['pilot_uid'];
     final isFounder = member['is_founder'] == true || member['is_founder'] == 1 || member['is_founder'] == '1';
     final isMe = pilotUid == _pilotUid;
-    final joinedAt = _formatDateTime(member['joined_at']);
+    final roleStr = (member['role']?.toString() ?? 'member').toLowerCase();
+
+    String roleLabel;
+    Color roleColor;
+    switch (roleStr) {
+      case 'leader':
+        roleLabel = 'Líder';
+        roleColor = _amberAccent;
+        break;
+      case 'officer':
+        roleLabel = 'Oficial';
+        roleColor = _cyanColor;
+        break;
+      case 'member':
+      default:
+        roleLabel = 'Membro';
+        roleColor = Colors.white70;
+        break;
+    }
+
+    // Busca o nome da equipe associada
+    String teamName = member['team_name']?.toString() ?? 'Sem Equipe';
+    if (member['team_uid'] != null) {
+      final teamMatch = _corpTeams.firstWhere(
+        (t) => t['team_uid'] == member['team_uid'] || t['team_uid'].toString() == member['team_uid'].toString(),
+        orElse: () => {},
+      );
+      if (teamMatch.isNotEmpty && teamMatch['description'] != null) {
+        teamName = teamMatch['description'];
+      }
+    }
+    final bool hasTeam = teamName != 'Sem Equipe' && teamName.isNotEmpty;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: _panelBg,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: isMe ? _cyanColor.withOpacity(0.4) : Colors.white12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Linha de Cabeçalho do Card
-          Row(
+      child: InkWell(
+        onTap: () => _showMemberDetailsDialog(member),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
             children: [
+              // Ícone indicativo
               Container(
-                padding: const EdgeInsets.all(5),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: isFounder ? _amberAccent.withOpacity(0.15) : _cyanColor.withOpacity(0.12),
                   shape: BoxShape.circle,
-                  border: Border.all(color: isFounder ? _amberAccent.withOpacity(0.5) : _cyanColor.withOpacity(0.3)),
+                  border: Border.all(
+                    color: isFounder ? _amberAccent.withOpacity(0.5) : _cyanColor.withOpacity(0.3),
+                    width: 1,
+                  ),
                 ),
                 child: Icon(
                   isFounder ? Icons.military_tech_outlined : Icons.person_outline,
                   color: isFounder ? _amberAccent : _cyanColor,
-                  size: 15,
+                  size: 14,
                 ),
               ),
               const SizedBox(width: 8),
+
+              // Nome do Piloto + Badge VOCÊ
               Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
+                flex: 5,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      pilotName.toUpperCase(),
-                      style: GoogleFonts.shareTechMono(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.1,
+                    Flexible(
+                      child: Text(
+                        pilotName.toUpperCase(),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ),
-                    if (isFounder)
+                    if (isMe) ...[
+                      const SizedBox(width: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _amberAccent.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(3),
-                          border: Border.all(color: _amberAccent.withOpacity(0.6)),
-                        ),
-                        child: Text(
-                          'FUNDADOR',
-                          style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 9, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    if (isMe)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: _greenAccent.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(3),
-                          border: Border.all(color: _greenAccent.withOpacity(0.6)),
+                          border: Border.all(color: _greenAccent.withOpacity(0.5)),
                         ),
                         child: Text(
                           'VOCÊ',
-                          style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.shareTechMono(
+                            color: _greenAccent,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
-              // Botão para excluir/desligar membro (não permite desligar o fundador)
-              if (!isFounder)
+              const SizedBox(width: 6),
+
+              // Cargo
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: roleColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: roleColor.withOpacity(0.4)),
+                ),
+                child: Text(
+                  roleLabel,
+                  style: GoogleFonts.shareTechMono(
+                    color: roleColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Equipe (se não couber na tela, omite o resto com reticências)
+              Expanded(
+                flex: 4,
+                child: Text(
+                  teamName,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.end,
+                  style: GoogleFonts.shareTechMono(
+                    color: hasTeam ? _greenAccent : Colors.white38,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // Ícone Lápis para abrir Detalhes
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, color: _cyanColor, size: 16),
+                tooltip: 'Gerenciar Piloto',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _showMemberDetailsDialog(member),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo de Detalhes e Gestão do Piloto Admitido
+  Future<void> _showMemberDetailsDialog(Map<String, dynamic> member) async {
+    final pilotUid = member['pilot_uid'];
+    if (pilotUid == null) return;
+
+    final pilotName = member['pilot_name']?.toString() ?? 'Piloto';
+    final isFounder = member['is_founder'] == true || member['is_founder'] == 1 || member['is_founder'] == '1';
+    final isMe = pilotUid == _pilotUid;
+    final joinedAt = _formatDateTime(member['joined_at']);
+
+    String selectedRole = (member['role']?.toString() ?? 'member').toLowerCase();
+    if (!['leader', 'officer', 'member'].contains(selectedRole)) selectedRole = 'member';
+    int? selectedTeamUid = member['team_uid'] != null ? int.tryParse(member['team_uid'].toString()) : null;
+
+    bool isUpdatingRole = false;
+    bool isUpdatingTeam = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isTeamValid = selectedTeamUid == null || _corpTeams.any((t) => int.tryParse(t['team_uid'].toString()) == selectedTeamUid);
+          final effectiveTeamUid = isTeamValid ? selectedTeamUid : null;
+
+          return AlertDialog(
+            backgroundColor: _cardBg,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: _cyanColor, width: 1.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+            contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            title: Row(
+              children: [
+                const Icon(Icons.manage_accounts_outlined, color: _cyanColor, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'DETALHES DO ADMITIDO',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
                 IconButton(
-                  icon: const Icon(Icons.person_remove_outlined, color: _redAccent, size: 18),
-                  tooltip: 'Desligar Membro da Corporação',
-                  onPressed: () => _confirmRemoveMember(member),
-                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                  onPressed: () => Navigator.of(ctx).pop(),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          // Data de admissão
-          Row(
-            children: [
-              const Icon(Icons.access_time, size: 11, color: Colors.white38),
-              const SizedBox(width: 5),
-              Text(
-                'ADMISSÃO: $joinedAt',
-                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
-              ),
-            ],
-          ),
-          const Divider(color: Colors.white10, height: 12),
-          // Seletores de Cargo e Equipe
-          Row(
-            children: [
-              // Cargo (Dropdown)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'CARGO:',
-                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Box com info de cabeçalho do piloto
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _panelBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white12),
                     ),
-                    const SizedBox(height: 3),
-                    _buildRoleDropdown(member),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Equipe (Dropdown)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'EQUIPE:',
-                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isFounder ? _amberAccent.withOpacity(0.15) : _cyanColor.withOpacity(0.12),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isFounder ? _amberAccent.withOpacity(0.5) : _cyanColor.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Icon(
+                                isFounder ? Icons.military_tech_outlined : Icons.person_outline,
+                                color: isFounder ? _amberAccent : _cyanColor,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  Text(
+                                    pilotName.toUpperCase(),
+                                    style: GoogleFonts.shareTechMono(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.1,
+                                    ),
+                                  ),
+                                  if (isFounder)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: _amberAccent.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(3),
+                                        border: Border.all(color: _amberAccent.withOpacity(0.6)),
+                                      ),
+                                      child: Text(
+                                        'FUNDADOR',
+                                        style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  if (isMe)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: _greenAccent.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(3),
+                                        border: Border.all(color: _greenAccent.withOpacity(0.6)),
+                                      ),
+                                      child: Text(
+                                        'VOCÊ',
+                                        style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time, size: 12, color: Colors.white38),
+                            const SizedBox(width: 6),
+                            Text(
+                              'DATA DE ADMISSÃO: $joinedAt',
+                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 3),
-                    _buildTeamDropdown(member),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Atribuir Cargo
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'CARGO NA CORPORAÇÃO:',
+                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      if (isUpdatingRole)
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: _cyanColor),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _panelBg,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _cyanColor.withOpacity(0.4)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedRole,
+                        isDense: true,
+                        isExpanded: true,
+                        dropdownColor: _cardBg,
+                        icon: const Icon(Icons.arrow_drop_down, color: _cyanColor),
+                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'leader',
+                            child: Text('Líder', style: TextStyle(color: _amberAccent, fontWeight: FontWeight.bold)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'officer',
+                            child: Text('Oficial', style: TextStyle(color: _cyanColor, fontWeight: FontWeight.bold)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'member',
+                            child: Text('Membro', style: TextStyle(color: Colors.white70)),
+                          ),
+                        ],
+                        onChanged: isFounder || isUpdatingRole
+                            ? null
+                            : (newRole) async {
+                                if (newRole != null && newRole != selectedRole) {
+                                  setDialogState(() {
+                                    selectedRole = newRole;
+                                    isUpdatingRole = true;
+                                  });
+                                  member['role'] = newRole;
+                                  await _updateMemberRole(pilotUid, newRole);
+                                  setDialogState(() {
+                                    isUpdatingRole = false;
+                                  });
+                                  setState(() {});
+                                }
+                              },
+                      ),
+                    ),
+                  ),
+                  if (isFounder) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '* O comandante fundador detém a liderança permanente.',
+                      style: GoogleFonts.shareTechMono(color: _amberAccent.withOpacity(0.8), fontSize: 10),
+                    ),
                   ],
-                ),
+
+                  const SizedBox(height: 14),
+
+                  // Atribuir Equipe
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'EQUIPE / DIVISÃO:',
+                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      if (isUpdatingTeam)
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: _greenAccent),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _panelBg,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _greenAccent.withOpacity(0.4)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int?>(
+                        value: effectiveTeamUid,
+                        isDense: true,
+                        isExpanded: true,
+                        dropdownColor: _cardBg,
+                        icon: const Icon(Icons.arrow_drop_down, color: _greenAccent),
+                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Sem Equipe', style: TextStyle(color: Colors.white38)),
+                          ),
+                          ..._corpTeams.map((t) {
+                            final tUid = int.tryParse(t['team_uid'].toString());
+                            final desc = t['description']?.toString() ?? 'Equipe';
+                            return DropdownMenuItem<int?>(
+                              value: tUid,
+                              child: Text(desc, style: const TextStyle(color: _greenAccent)),
+                            );
+                          }).toList(),
+                        ],
+                        onChanged: isUpdatingTeam
+                            ? null
+                            : (newTeamUid) async {
+                                if (newTeamUid != effectiveTeamUid) {
+                                  setDialogState(() {
+                                    selectedTeamUid = newTeamUid;
+                                    isUpdatingTeam = true;
+                                  });
+                                  member['team_uid'] = newTeamUid;
+                                  await _updateMemberTeam(pilotUid, newTeamUid);
+                                  setDialogState(() {
+                                    isUpdatingTeam = false;
+                                  });
+                                  setState(() {});
+                                }
+                              },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white12, height: 1),
+                  const SizedBox(height: 12),
+
+                  // Botão de Desligar Membro (apenas se não for fundador)
+                  if (!isFounder)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final nav = Navigator.of(ctx);
+                        await _confirmRemoveMember(member);
+                        nav.pop();
+                      },
+                      icon: const Icon(Icons.person_remove_outlined, color: _redAccent, size: 16),
+                      label: Text(
+                        'DESLIGAR MEMBRO DA CORPORAÇÃO',
+                        style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: _redAccent.withOpacity(0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        backgroundColor: _redAccent.withOpacity(0.06),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('CONCLUÍDO', style: GoogleFonts.shareTechMono(color: _cyanColor, fontWeight: FontWeight.bold)),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Dropdown para selecionar cargo: Líder, Oficial, Membro
-  Widget _buildRoleDropdown(Map<String, dynamic> member) {
-    final currentRole = member['role']?.toString() ?? 'member';
-    final isFounder = member['is_founder'] == true || member['is_founder'] == 1 || member['is_founder'] == '1';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: _darkBg,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: _cyanColor.withOpacity(0.3)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: ['leader', 'officer', 'member'].contains(currentRole) ? currentRole : 'member',
-          isDense: true,
-          isExpanded: true,
-          dropdownColor: _cardBg,
-          icon: const Icon(Icons.arrow_drop_down, color: _cyanColor, size: 18),
-          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
-          items: const [
-            DropdownMenuItem(
-              value: 'leader',
-              child: Text('Líder', style: TextStyle(color: _amberAccent, fontWeight: FontWeight.bold)),
-            ),
-            DropdownMenuItem(
-              value: 'officer',
-              child: Text('Oficial', style: TextStyle(color: _cyanColor, fontWeight: FontWeight.bold)),
-            ),
-            DropdownMenuItem(
-              value: 'member',
-              child: Text('Membro', style: TextStyle(color: Colors.white70)),
-            ),
-          ],
-          onChanged: isFounder
-              ? null
-              : (newRole) {
-                  if (newRole != null && newRole != currentRole) {
-                    _updateMemberRole(member['pilot_uid'], newRole);
-                  }
-                },
-        ),
-      ),
-    );
-  }
-
-  /// Dropdown para selecionar equipe da tabela corporation_teams
-  Widget _buildTeamDropdown(Map<String, dynamic> member) {
-    final currentTeamUid = member['team_uid'] != null ? int.tryParse(member['team_uid'].toString()) : null;
-
-    final List<DropdownMenuItem<int?>> items = [
-      const DropdownMenuItem<int?>(
-        value: null,
-        child: Text('Sem Equipe', style: TextStyle(color: Colors.white38)),
-      ),
-      ..._corpTeams.map((t) {
-        final tUid = int.tryParse(t['team_uid'].toString());
-        final desc = t['description']?.toString() ?? 'Equipe';
-        return DropdownMenuItem<int?>(
-          value: tUid,
-          child: Text(desc, style: const TextStyle(color: _greenAccent)),
-        );
-      }).toList(),
-    ];
-
-    final isValidValue = currentTeamUid == null || _corpTeams.any((t) => int.tryParse(t['team_uid'].toString()) == currentTeamUid);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: _darkBg,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: _greenAccent.withOpacity(0.3)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int?>(
-          value: isValidValue ? currentTeamUid : null,
-          isDense: true,
-          isExpanded: true,
-          dropdownColor: _cardBg,
-          icon: const Icon(Icons.arrow_drop_down, color: _greenAccent, size: 18),
-          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
-          items: items,
-          onChanged: (newTeamUid) {
-            if (newTeamUid != currentTeamUid) {
-              _updateMemberTeam(member['pilot_uid'], newTeamUid);
-            }
-          },
-        ),
+          );
+        },
       ),
     );
   }
