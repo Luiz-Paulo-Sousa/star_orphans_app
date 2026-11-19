@@ -2716,6 +2716,8 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final corp = _corporationData ?? {};
     final String corpName = corp['name'] ?? 'CORPORAÇÃO';
     final String role = (corp['role'] ?? 'Membro').toString().toUpperCase();
+    final String rawRole = (corp['role'] ?? 'member').toString().toLowerCase();
+    final bool isLeaderOrOfficer = rawRole == 'leader' || rawRole == 'officer' || corp['is_leader'] == true;
     final String stationName = corp['station_name'] ?? 'Não Definida';
     final String founderName = corp['founder_name'] ?? 'Desconhecido';
     final num corpCredits = num.tryParse(corp['credits']?.toString() ?? corp['corporation_credits']?.toString() ?? '0') ?? 0;
@@ -2730,7 +2732,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             children: [
               // Box com informações da Corporação
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: _panelBg,
                   borderRadius: BorderRadius.circular(8),
@@ -2813,32 +2815,78 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                         ),
                       ],
                     ),
-                    const Divider(color: Colors.white24, height: 16),
+                    const Divider(color: Colors.white24, height: 12),
                     _buildInfoRow('ESTAÇÃO BASE:', stationName),
-                    const SizedBox(height: 5),
-                    _buildInfoRow('LÍDER FUNDADOR:', founderName),
-                    const SizedBox(height: 5),
-                    _buildInfoRow(
-                      'SALDO EM CRÉDITOS:',
-                      '${_formatCredits(corpCredits)} CR',
-                      valueColor: _greenAccent,
-                    ),
-                    const SizedBox(height: 5),
-                    _buildInfoRow(
-                      'STATUS:',
-                      'EM OPERAÇÃO ATIVA',
-                      valueColor: _cyanColor,
-                    ),
-                    const SizedBox(height: 10),
-                    const Divider(color: Colors.white12, height: 1),
-                    const SizedBox(height: 8),
-                    // Botão para alimentar a tabela corporation_teams
+                    const SizedBox(height: 4),
+                    // Linha com Líder Fundador e Status juntos, sem espaçamento interno entre label e valor
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'LÍDER FUNDADOR: ',
+                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                            ),
+                            Text(
+                              founderName,
+                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'STATUS: ',
+                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                            ),
+                            Text(
+                              'EM OPERAÇÃO ATIVA',
+                              style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (isLeaderOrOfficer) ...[
+                      const SizedBox(height: 4),
+                      _buildInfoRow(
+                        'SALDO DE CRÉDITOS:',
+                        '${_formatCredits(corpCredits)} CR',
+                        valueColor: _greenAccent,
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    const Divider(color: Colors.white12, height: 1),
+                    const SizedBox(height: 6),
+                    // Linha com Total de Admitidos no lado esquerdo e Botão Gerenciar Equipes no lado direito
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              'TOTAL DE ADMITIDOS: ',
+                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                            ),
+                            Text(
+                              '${_corpMembers.length}',
+                              style: GoogleFonts.shareTechMono(
+                                color: _cyanColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                         OutlinedButton.icon(
                           onPressed: _showTeamsManagementDialog,
-                          icon: const Icon(Icons.groups_outlined, size: 15, color: _cyanColor),
+                          icon: const Icon(Icons.groups_outlined, size: 14, color: _cyanColor),
                           label: Text(
                             'GERENCIAR EQUIPES',
                             style: GoogleFonts.shareTechMono(
@@ -2850,7 +2898,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                           ),
                           style: OutlinedButton.styleFrom(
                             side: BorderSide(color: _cyanColor.withOpacity(0.5)),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                             backgroundColor: _cyanColor.withOpacity(0.06),
                           ),
@@ -2861,12 +2909,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // Divisão em 3 partes: ADMITIDOS | ITENS | FINANCEIRO
               _buildAffiliatedTabs(),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
 
               // Conteúdo da aba selecionada
               if (_currentAffiliatedTab == 'admitted')
@@ -3046,7 +3094,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
         if (_corpMembers.isEmpty)
           Container(
@@ -3078,8 +3126,8 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final joinedAt = _formatDateTime(member['joined_at']);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: _panelBg,
         borderRadius: BorderRadius.circular(6),
@@ -3092,7 +3140,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
                   color: isFounder ? _amberAccent.withOpacity(0.15) : _cyanColor.withOpacity(0.12),
                   shape: BoxShape.circle,
@@ -3101,10 +3149,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 child: Icon(
                   isFounder ? Icons.military_tech_outlined : Icons.person_outline,
                   color: isFounder ? _amberAccent : _cyanColor,
-                  size: 16,
+                  size: 15,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Wrap(
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -3160,11 +3208,11 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           // Data de admissão
           Row(
             children: [
-              const Icon(Icons.access_time, size: 12, color: Colors.white38),
+              const Icon(Icons.access_time, size: 11, color: Colors.white38),
               const SizedBox(width: 5),
               Text(
                 'ADMISSÃO: $joinedAt',
@@ -3172,7 +3220,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
               ),
             ],
           ),
-          const Divider(color: Colors.white10, height: 16),
+          const Divider(color: Colors.white10, height: 12),
           // Seletores de Cargo e Equipe
           Row(
             children: [
@@ -3185,7 +3233,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                       'CARGO:',
                       style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     _buildRoleDropdown(member),
                   ],
                 ),
@@ -3200,7 +3248,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                       'EQUIPE:',
                       style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     _buildTeamDropdown(member),
                   ],
                 ),
