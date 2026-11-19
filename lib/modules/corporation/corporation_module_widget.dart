@@ -2820,119 +2820,153 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                     const SizedBox(height: 10),
                     // Abas internas: MEMBROS | ITENS | FINANCEIRO logo abaixo do nome da corporação
                     _buildAffiliatedTabs(),
-                    const SizedBox(height: 10),
-                    const Divider(color: Colors.white24, height: 1),
-                    const SizedBox(height: 8),
-                    _buildInfoRow('ESTAÇÃO BASE:', stationName),
-                    const SizedBox(height: 4),
-                    // Linha com Líder Fundador e Status juntos, sem espaçamento interno entre label e valor
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'LÍDER FUNDADOR: ',
-                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
-                            ),
-                            Text(
-                              founderName,
-                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'STATUS: ',
-                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
-                            ),
-                            Text(
-                              'EM OPERAÇÃO ATIVA',
-                              style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    if (isLeaderOrOfficer) ...[
-                      const SizedBox(height: 4),
-                      _buildInfoRow(
-                        'SALDO DE CRÉDITOS:',
-                        '${_formatCredits(corpCredits)} CR',
-                        valueColor: _greenAccent,
-                      ),
-                    ],
-                    const SizedBox(height: 6),
-                    const Divider(color: Colors.white12, height: 1),
-                    const SizedBox(height: 6),
-                    // Linha com Total de Admitidos no lado esquerdo e Botão Gerenciar Equipes no lado direito
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 14),
-                            const SizedBox(width: 6),
-                            Text(
-                              'TOTAL DE MEMBROS: ',
-                              style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
-                            ),
-                            Text(
-                              '${_corpMembers.length}',
-                              style: GoogleFonts.shareTechMono(
-                                color: _cyanColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _showTeamsManagementDialog,
-                          icon: const Icon(Icons.groups_outlined, size: 14, color: _cyanColor),
-                          label: Text(
-                            'GERENCIAR EQUIPES',
-                            style: GoogleFonts.shareTechMono(
-                              color: _cyanColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: _cyanColor.withOpacity(0.5)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                            backgroundColor: _cyanColor.withOpacity(0.06),
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 10),
 
-              // Conteúdo da aba selecionada
-              if (_currentAffiliatedTab == 'admitted')
-                _buildAdmittedManagementView()
-              else if (_currentAffiliatedTab == 'items')
+              // Conteúdo Dinâmico da Aba Selecionada
+              if (_currentAffiliatedTab == 'admitted') ...[
+                // Box separado para informações de operação e gestão da corporação
+                _buildCorporationInfoBox(
+                  stationName: stationName,
+                  founderName: founderName,
+                  corpCredits: corpCredits,
+                  isLeaderOrOfficer: isLeaderOrOfficer,
+                ),
+                const SizedBox(height: 10),
+                _buildAdmittedManagementView(),
+              ] else if (_currentAffiliatedTab == 'items') ...[
                 _buildPlaceholderTab(
                   'ADMINISTRAÇÃO DE ITENS',
-                  'Módulo de hangar corporativo, armazéns de carga compartilhados e ativos estelares em desenvolvimento.',
+                  'Módulo de hangar corporativo, armazéns de carga compartilhados e movimentação de ativos estelares em desenvolvimento.',
                   Icons.inventory_2_outlined,
-                )
-              else if (_currentAffiliatedTab == 'finance')
+                ),
+              ] else if (_currentAffiliatedTab == 'finance') ...[
                 _buildPlaceholderTab(
                   'PARTE FINANCEIRA',
                   'Módulo de tesouraria, fluxo de caixa, transferências e histórico financeiro em desenvolvimento.',
                   Icons.account_balance_wallet_outlined,
                 ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Box separado com informações operacionais da Corporação (Estação Base, Líder, Status, Saldo, Equipes)
+  Widget _buildCorporationInfoBox({
+    required String stationName,
+    required String founderName,
+    required num corpCredits,
+    required bool isLeaderOrOfficer,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoRow('ESTAÇÃO BASE:', stationName),
+          const SizedBox(height: 4),
+          // Linha com Líder Fundador e Status juntos, sem espaçamento interno entre label e valor
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'LÍDER FUNDADOR: ',
+                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                  ),
+                  Text(
+                    founderName,
+                    style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'STATUS: ',
+                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                  ),
+                  Text(
+                    'EM OPERAÇÃO ATIVA',
+                    style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (isLeaderOrOfficer) ...[
+            const SizedBox(height: 4),
+            _buildInfoRow(
+              'SALDO DE CRÉDITOS:',
+              '${_formatCredits(corpCredits)} CR',
+              valueColor: _greenAccent,
+            ),
+          ],
+          const SizedBox(height: 6),
+          const Divider(color: Colors.white12, height: 1),
+          const SizedBox(height: 6),
+          // Linha com Total de Membros no lado esquerdo e Botão Gerenciar Equipes no lado direito
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 14),
+                  const SizedBox(width: 6),
+                  Text(
+                    'TOTAL DE MEMBROS: ',
+                    style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11),
+                  ),
+                  Text(
+                    '${_corpMembers.length}',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              OutlinedButton.icon(
+                onPressed: _showTeamsManagementDialog,
+                icon: const Icon(Icons.groups_outlined, size: 14, color: _cyanColor),
+                label: Text(
+                  'GERENCIAR EQUIPES',
+                  style: GoogleFonts.shareTechMono(
+                    color: _cyanColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: _cyanColor.withOpacity(0.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  backgroundColor: _cyanColor.withOpacity(0.06),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
             ],
           ),
         ),
