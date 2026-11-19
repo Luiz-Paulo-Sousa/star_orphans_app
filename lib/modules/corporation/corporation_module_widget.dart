@@ -3112,12 +3112,27 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             ),
           )
         else
-          ..._corpMembers.map((m) => _buildMemberCard(m)),
+          Container(
+            decoration: BoxDecoration(
+              color: _panelBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white12),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (int i = 0; i < _corpMembers.length; i++) ...[
+                  if (i > 0) const Divider(color: Colors.white10, height: 1),
+                  _buildMemberCard(_corpMembers[i]),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  /// Linha compacta (Single-Line) de cada membro admitido
+  /// Linha compacta (Single-Line) de cada membro admitido dentro do box unificado
   Widget _buildMemberCard(Map<String, dynamic> member) {
     final pilotName = member['pilot_name']?.toString() ?? 'Piloto';
     final pilotUid = member['pilot_uid'];
@@ -3156,16 +3171,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     }
     final bool hasTeam = teamName != 'Sem Equipe' && teamName.isNotEmpty;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isMe ? _cyanColor.withOpacity(0.4) : Colors.white12),
-      ),
+    return Material(
+      color: isMe ? _cyanColor.withOpacity(0.05) : Colors.transparent,
       child: InkWell(
         onTap: () => _showMemberDetailsDialog(member),
-        borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           child: Row(
