@@ -2967,12 +2967,6 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       ),
     );
   }
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   /// Barra de 3 Abas de Gestão Corporativa
   Widget _buildAffiliatedTabs() {
