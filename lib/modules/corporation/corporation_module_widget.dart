@@ -42,8 +42,21 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   // Alternador para testes rápidos no VS Code
   bool _simulateNoCorporation = false;
 
-  // Navegação de telas no módulo: 'initial', 'apply', 'create'
+  // Navegação de telas no módulo (Freelancer): 'initial', 'apply', 'create'
   String _currentView = 'initial';
+
+  // Sub-abas de Gestão Corporativa: 'admitted' (Controle dos Admitidos), 'items' (Itens), 'finance' (Financeiro)
+  String _currentAffiliatedTab = 'admitted';
+
+  // Estados de Gerenciamento de Membros (Controle dos Admitidos)
+  List<Map<String, dynamic>> _corpMembers = [];
+  bool _isLoadingMembers = false;
+  String? _membersErrorMessage;
+
+  // Estados de Gerenciamento de Equipes (corporation_teams)
+  List<Map<String, dynamic>> _corpTeams = [];
+  bool _isLoadingTeams = false;
+  String? _teamsErrorMessage;
 
   // Estados do Passo 2 (Diretório e Inscrição)
   final TextEditingController _searchController = TextEditingController();
@@ -86,6 +99,14 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       if (uid != null) return int.tryParse(uid.toString()) ?? 536870915;
     }
     return 536870915;
+  }
+
+  int? get _corpUid {
+    final corp = _corporationData;
+    if (corp != null && corp['corporation_uid'] != null) {
+      return int.tryParse(corp['corporation_uid'].toString());
+    }
+    return null;
   }
 
   String _formatCredits(dynamic value) {
@@ -139,6 +160,11 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             }
             _isLoading = false;
           });
+
+          if (data['has_corporation'] == true && data['corporation'] != null) {
+            _fetchCorporationTeams(silent: true);
+            _fetchCorporationMembers(silent: true);
+          }
           return;
         }
       }
@@ -152,6 +178,526 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Busca as equipes da corporação (tabela corporation_teams)
+  Future<void> _fetchCorporationTeams({bool silent = false}) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    if (!silent) {
+      setState(() {
+        _isLoadingTeams = true;
+        _teamsErrorMessage = null;
+      });
+    }
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/teams');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        if (decoded['status'] == 'sucesso') {
+          if (mounted) {
+            setState(() {
+              _corpTeams = List<Map<String, dynamic>>.from(decoded['data'] ?? []);
+              _isLoadingTeams = false;
+            });
+          }
+          return;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _teamsErrorMessage = 'Falha ao obter equipes.';
+          _isLoadingTeams = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _teamsErrorMessage = 'Erro ao carregar equipes: $e';
+          _isLoadingTeams = false;
+        });
+      }
+    }
+  }
+
+  /// Busca a lista de admitidos na corporação (corporation_members)
+  Future<void> _fetchCorporationMembers({bool silent = false}) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    if (!silent) {
+      setState(() {
+        _isLoadingMembers = true;
+        _membersErrorMessage = null;
+      });
+    }
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        if (decoded['status'] == 'sucesso') {
+          if (mounted) {
+            setState(() {
+              _corpMembers = List<Map<String, dynamic>>.from(decoded['data'] ?? []);
+              _isLoadingMembers = false;
+            });
+          }
+          return;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _membersErrorMessage = 'Falha ao obter membros admitidos.';
+          _isLoadingMembers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _membersErrorMessage = 'Erro ao carregar membros: $e';
+          _isLoadingMembers = false;
+        });
+      }
+    }
+  }
+
+  /// Atualiza o cargo de um admitido
+  Future<void> _updateMemberRole(dynamic pilotUid, String newRole) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members/$pilotUid');
+      final res = await http.patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'role': newRole}),
+      ).timeout(const Duration(seconds: 8));
+
+      final decoded = json.decode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: _panelBg,
+              content: Text('Cargo atualizado com sucesso!', style: GoogleFonts.shareTechMono(color: _cyanColor)),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        await _fetchCorporationMembers(silent: true);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF421515),
+              content: Text(decoded['mensagem'] ?? 'Falha ao atualizar cargo.', style: GoogleFonts.shareTechMono(color: Colors.white)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF421515),
+            content: Text('Erro: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Atualiza a equipe de um admitido
+  Future<void> _updateMemberTeam(dynamic pilotUid, int? newTeamUid) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members/$pilotUid');
+      final res = await http.patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'team_uid': newTeamUid}),
+      ).timeout(const Duration(seconds: 8));
+
+      final decoded = json.decode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: _panelBg,
+              content: Text('Equipe atualizada com sucesso!', style: GoogleFonts.shareTechMono(color: _greenAccent)),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        await _fetchCorporationMembers(silent: true);
+        await _fetchCorporationTeams(silent: true);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF421515),
+              content: Text(decoded['mensagem'] ?? 'Falha ao atualizar equipe.', style: GoogleFonts.shareTechMono(color: Colors.white)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF421515),
+            content: Text('Erro: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Exclui/desliga um admitido da corporação
+  Future<void> _confirmRemoveMember(Map<String, dynamic> member) async {
+    final pilotName = member['pilot_name'] ?? 'Piloto';
+    final pilotUid = member['pilot_uid'];
+    final corpId = _corpUid;
+    if (corpId == null || pilotUid == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardBg,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _redAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: _redAccent, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'DESLIGAR MEMBRO',
+              style: GoogleFonts.shareTechMono(color: _redAccent, fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+          ],
+        ),
+        content: Text(
+          'Deseja realmente desligar o piloto "$pilotName" da corporação?\n\nEle perderá todos os acessos e voltará ao status de Freelancer Independente.',
+          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
+            child: Text('DESLIGAR', style: GoogleFonts.shareTechMono(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members/$pilotUid');
+      final res = await http.delete(uri).timeout(const Duration(seconds: 8));
+      final decoded = json.decode(res.body);
+
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: _panelBg,
+              content: Text('Piloto $pilotName foi desligado da corporação.', style: GoogleFonts.shareTechMono(color: _greenAccent)),
+            ),
+          );
+        }
+        await _fetchCorporationMembers(silent: true);
+        await _fetchCorporationTeams(silent: true);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF421515),
+              content: Text(decoded['mensagem'] ?? 'Falha ao desligar piloto.', style: GoogleFonts.shareTechMono(color: Colors.white)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF421515),
+            content: Text('Erro ao conectar: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Abre o modal para gerenciar a tabela corporation_teams
+  Future<void> _showTeamsManagementDialog() async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    final newTeamController = TextEditingController();
+    bool isSubmittingTeam = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: _cardBg,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: _cyanColor, width: 1.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.groups_outlined, color: _cyanColor, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'GERENCIAR EQUIPES',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Cadastre ou remova equipes/divisões para os membros da sua corporação.',
+                    style: GoogleFonts.shareTechMono(color: Colors.white60, fontSize: 11),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Campo para cadastrar nova equipe
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: newTeamController,
+                          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                          decoration: InputDecoration(
+                            hintText: 'Nome da nova equipe (ex: Mineração)',
+                            hintStyle: GoogleFonts.shareTechMono(color: Colors.white24, fontSize: 12),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            fillColor: _darkBg,
+                            filled: true,
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: const BorderSide(color: Colors.white12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: const BorderSide(color: _greenAccent),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: isSubmittingTeam
+                            ? null
+                            : () async {
+                                final desc = newTeamController.text.trim();
+                                if (desc.isEmpty) return;
+                                setDialogState(() => isSubmittingTeam = true);
+
+                                try {
+                                  final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/teams');
+                                  final res = await http.post(
+                                    uri,
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: json.encode({'description': desc}),
+                                  ).timeout(const Duration(seconds: 8));
+
+                                  final decoded = json.decode(res.body);
+                                  if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+                                    newTeamController.clear();
+                                    await _fetchCorporationTeams(silent: true);
+                                    setDialogState(() => isSubmittingTeam = false);
+                                    setState(() {});
+                                  } else {
+                                    setDialogState(() => isSubmittingTeam = false);
+                                  }
+                                } catch (_) {
+                                  setDialogState(() => isSubmittingTeam = false);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _greenAccent,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        child: isSubmittingTeam
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                              )
+                            : Text(
+                                'CRIAR',
+                                style: GoogleFonts.shareTechMono(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white12, height: 1),
+                  const SizedBox(height: 10),
+
+                  Text(
+                    'EQUIPES CADASTRADAS (${_corpTeams.length}):',
+                    style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: _corpTeams.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                'Nenhuma equipe criada ainda.',
+                                style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 12),
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _corpTeams.length,
+                            itemBuilder: (context, i) {
+                              final t = _corpTeams[i];
+                              final teamUid = t['team_uid'];
+                              final count = t['members_count'] ?? 0;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _darkBg,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.shield_outlined, color: _greenAccent, size: 14),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        t['description'] ?? '',
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white10,
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                      child: Text(
+                                        '$count ${count == 1 ? "membro" : "membros"}',
+                                        style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: _redAccent, size: 16),
+                                      tooltip: 'Excluir equipe',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () async {
+                                        final bool? delConfirm = await showDialog<bool>(
+                                          context: ctx,
+                                          builder: (dCtx) => AlertDialog(
+                                            backgroundColor: _cardBg,
+                                            shape: RoundedRectangleBorder(
+                                              side: const BorderSide(color: _redAccent),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            title: Text('EXCLUIR EQUIPE', style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 14, fontWeight: FontWeight.bold)),
+                                            content: Text(
+                                              'Deseja excluir a equipe "${t['description']}"? Os membros alocados nela ficarão "Sem Equipe".',
+                                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.of(dCtx).pop(false),
+                                                child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+                                              ),
+                                              ElevatedButton(
+                                                onPressed: () => Navigator.of(dCtx).pop(true),
+                                                style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
+                                                child: Text('EXCLUIR', style: GoogleFonts.shareTechMono(color: Colors.white, fontWeight: FontWeight.bold)),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (delConfirm == true) {
+                                          try {
+                                            final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/teams/$teamUid');
+                                            await http.delete(uri).timeout(const Duration(seconds: 8));
+                                            await _fetchCorporationTeams(silent: true);
+                                            await _fetchCorporationMembers(silent: true);
+                                            setDialogState(() {});
+                                            setState(() {});
+                                          } catch (_) {}
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('CONCLUÍDO', style: GoogleFonts.shareTechMono(color: _cyanColor, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    newTeamController.dispose();
   }
 
   /// Consulta a lista de corporações ativas para o Passo 2
@@ -2178,6 +2724,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Box com informações da Corporação
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
@@ -2225,7 +2772,11 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                             IconButton(
                               icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
                               tooltip: 'Atualizar Dados',
-                              onPressed: () => _fetchCorporationStatus(),
+                              onPressed: () {
+                                _fetchCorporationStatus();
+                                _fetchCorporationTeams();
+                                _fetchCorporationMembers();
+                              },
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
@@ -2274,11 +2825,516 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                       'EM OPERAÇÃO ATIVA',
                       valueColor: _cyanColor,
                     ),
+                    const SizedBox(height: 10),
+                    const Divider(color: Colors.white12, height: 1),
+                    const SizedBox(height: 8),
+                    // Botão para alimentar a tabela corporation_teams
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _showTeamsManagementDialog,
+                          icon: const Icon(Icons.groups_outlined, size: 15, color: _cyanColor),
+                          label: Text(
+                            'GERENCIAR EQUIPES',
+                            style: GoogleFonts.shareTechMono(
+                              color: _cyanColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: _cyanColor.withOpacity(0.5)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            backgroundColor: _cyanColor.withOpacity(0.06),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Divisão em 3 partes: ADMITIDOS | ITENS | FINANCEIRO
+              _buildAffiliatedTabs(),
+
+              const SizedBox(height: 14),
+
+              // Conteúdo da aba selecionada
+              if (_currentAffiliatedTab == 'admitted')
+                _buildAdmittedManagementView()
+              else if (_currentAffiliatedTab == 'items')
+                _buildPlaceholderTab(
+                  'ADMINISTRAÇÃO DE ITENS',
+                  'Módulo de hangar corporativo, armazéns de carga compartilhados e ativos estelares em desenvolvimento.',
+                  Icons.inventory_2_outlined,
+                )
+              else if (_currentAffiliatedTab == 'finance')
+                _buildPlaceholderTab(
+                  'PARTE FINANCEIRA',
+                  'Módulo de tesouraria, fluxo de caixa, transferências e histórico financeiro em desenvolvimento.',
+                  Icons.account_balance_wallet_outlined,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Barra de 3 Abas de Gestão Corporativa
+  Widget _buildAffiliatedTabs() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildTabButton(
+            title: 'ADMITIDOS',
+            icon: Icons.badge_outlined,
+            isSelected: _currentAffiliatedTab == 'admitted',
+            onTap: () => setState(() => _currentAffiliatedTab = 'admitted'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildTabButton(
+            title: 'ITENS',
+            icon: Icons.inventory_2_outlined,
+            isSelected: _currentAffiliatedTab == 'items',
+            onTap: () => setState(() => _currentAffiliatedTab = 'items'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildTabButton(
+            title: 'FINANCEIRO',
+            icon: Icons.account_balance_wallet_outlined,
+            isSelected: _currentAffiliatedTab == 'finance',
+            onTap: () => setState(() => _currentAffiliatedTab = 'finance'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabButton({
+    required String title,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: isSelected ? _cyanColor.withOpacity(0.18) : _panelBg,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isSelected ? _cyanColor : Colors.white12,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 15, color: isSelected ? _cyanColor : Colors.white54),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: GoogleFonts.shareTechMono(
+                color: isSelected ? _cyanColor : Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// PARTE 1: Controle dos Admitidos
+  Widget _buildAdmittedManagementView() {
+    if (_isLoadingMembers) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: _cyanColor),
+              const SizedBox(height: 12),
+              Text(
+                'CARREGANDO MEMBROS ADMITIDOS...',
+                style: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 12, letterSpacing: 1.1),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_membersErrorMessage != null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: _redAccent.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: _redAccent, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _membersErrorMessage!,
+                style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
+              onPressed: () => _fetchCorporationMembers(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Cabeçalho da seção com contagem e refresh
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.people_alt_outlined, color: _cyanColor, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'PILOTOS ADMITIDOS (${_corpMembers.length})',
+                  style: GoogleFonts.shareTechMono(
+                    color: _cyanColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: _cyanColor, size: 18),
+              tooltip: 'Atualizar Lista',
+              onPressed: () {
+                _fetchCorporationMembers();
+                _fetchCorporationTeams();
+              },
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        if (_corpMembers.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: _panelBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Center(
+              child: Text(
+                'Nenhum piloto admitido na corporação até o momento.',
+                style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          )
+        else
+          ..._corpMembers.map((m) => _buildMemberCard(m)),
+      ],
+    );
+  }
+
+  /// Card de cada membro admitido
+  Widget _buildMemberCard(Map<String, dynamic> member) {
+    final pilotName = member['pilot_name']?.toString() ?? 'Piloto';
+    final pilotUid = member['pilot_uid'];
+    final isFounder = member['is_founder'] == true;
+    final isMe = pilotUid == _pilotUid;
+    final joinedAt = _formatDateTime(member['joined_at']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: isMe ? _cyanColor.withOpacity(0.4) : Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Linha de Cabeçalho do Card
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isFounder ? _amberAccent.withOpacity(0.15) : _cyanColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: isFounder ? _amberAccent.withOpacity(0.5) : _cyanColor.withOpacity(0.3)),
+                ),
+                child: Icon(
+                  isFounder ? Icons.military_tech_outlined : Icons.person_outline,
+                  color: isFounder ? _amberAccent : _cyanColor,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  children: [
+                    Text(
+                      pilotName.toUpperCase(),
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    if (isFounder)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _amberAccent.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: _amberAccent.withOpacity(0.6)),
+                        ),
+                        child: Text(
+                          'FUNDADOR',
+                          style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    if (isMe)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _greenAccent.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: _greenAccent.withOpacity(0.6)),
+                        ),
+                        child: Text(
+                          'VOCÊ',
+                          style: GoogleFonts.shareTechMono(color: _greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Botão para excluir/desligar membro (não permite desligar o fundador)
+              if (!isFounder)
+                IconButton(
+                  icon: const Icon(Icons.person_remove_outlined, color: _redAccent, size: 18),
+                  tooltip: 'Desligar Membro da Corporação',
+                  onPressed: () => _confirmRemoveMember(member),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Data de admissão
+          Row(
+            children: [
+              const Icon(Icons.access_time, size: 12, color: Colors.white38),
+              const SizedBox(width: 5),
+              Text(
+                'ADMISSÃO: $joinedAt',
+                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white10, height: 16),
+          // Seletores de Cargo e Equipe
+          Row(
+            children: [
+              // Cargo (Dropdown)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CARGO:',
+                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
+                    ),
+                    const SizedBox(height: 4),
+                    _buildRoleDropdown(member),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Equipe (Dropdown)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EQUIPE:',
+                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
+                    ),
+                    const SizedBox(height: 4),
+                    _buildTeamDropdown(member),
                   ],
                 ),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Dropdown para selecionar cargo: Líder, Oficial, Membro
+  Widget _buildRoleDropdown(Map<String, dynamic> member) {
+    final currentRole = member['role']?.toString() ?? 'member';
+    final isFounder = member['is_founder'] == true;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: _darkBg,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: _cyanColor.withOpacity(0.3)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: ['leader', 'officer', 'member'].contains(currentRole) ? currentRole : 'member',
+          isDense: true,
+          isExpanded: true,
+          dropdownColor: _cardBg,
+          icon: const Icon(Icons.arrow_drop_down, color: _cyanColor, size: 18),
+          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+          items: const [
+            DropdownMenuItem(
+              value: 'leader',
+              child: Text('Líder', style: TextStyle(color: _amberAccent, fontWeight: FontWeight.bold)),
+            ),
+            DropdownMenuItem(
+              value: 'officer',
+              child: Text('Oficial', style: TextStyle(color: _cyanColor, fontWeight: FontWeight.bold)),
+            ),
+            DropdownMenuItem(
+              value: 'member',
+              child: Text('Membro', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+          onChanged: isFounder
+              ? null
+              : (newRole) {
+                  if (newRole != null && newRole != currentRole) {
+                    _updateMemberRole(member['pilot_uid'], newRole);
+                  }
+                },
+        ),
+      ),
+    );
+  }
+
+  /// Dropdown para selecionar equipe da tabela corporation_teams
+  Widget _buildTeamDropdown(Map<String, dynamic> member) {
+    final currentTeamUid = member['team_uid'] != null ? int.tryParse(member['team_uid'].toString()) : null;
+
+    final List<DropdownMenuItem<int?>> items = [
+      const DropdownMenuItem<int?>(
+        value: null,
+        child: Text('Sem Equipe', style: TextStyle(color: Colors.white38)),
+      ),
+      ..._corpTeams.map((t) {
+        final tUid = int.tryParse(t['team_uid'].toString());
+        final desc = t['description']?.toString() ?? 'Equipe';
+        return DropdownMenuItem<int?>(
+          value: tUid,
+          child: Text(desc, style: const TextStyle(color: _greenAccent)),
+        );
+      }).toList(),
+    ];
+
+    final isValidValue = currentTeamUid == null || _corpTeams.any((t) => int.tryParse(t['team_uid'].toString()) == currentTeamUid);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: _darkBg,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: _greenAccent.withOpacity(0.3)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int?>(
+          value: isValidValue ? currentTeamUid : null,
+          isDense: true,
+          isExpanded: true,
+          dropdownColor: _cardBg,
+          icon: const Icon(Icons.arrow_drop_down, color: _greenAccent, size: 18),
+          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+          items: items,
+          onChanged: (newTeamUid) {
+            if (newTeamUid != currentTeamUid) {
+              _updateMemberTeam(member['pilot_uid'], newTeamUid);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Placeholder para abas de Itens e Financeiro
+  Widget _buildPlaceholderTab(String title, String description, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: _cyanColor.withOpacity(0.4), size: 36),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: GoogleFonts.shareTechMono(
+                color: _cyanColor,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Text(
+                description,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 11, height: 1.4),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2303,4 +3359,5 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       ],
     );
   }
+}
 }
