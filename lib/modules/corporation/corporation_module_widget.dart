@@ -273,7 +273,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
     try {
       final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members/$pilotUid');
-      final res = await http.patch(
+      final res = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'role': newRole}),
@@ -320,7 +320,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
     try {
       final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/members/$pilotUid');
-      final res = await http.patch(
+      final res = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'team_uid': newTeamUid}),
