@@ -586,17 +586,21 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 220),
-                    child: _corpTeams.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                'Nenhuma equipe criada ainda.',
-                                style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 12),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
+                    child: _isLoadingTeams
+                        ? const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: _cyanColor)))
+                        : _teamsErrorMessage != null
+                            ? Center(child: Padding(padding: const EdgeInsets.all(16), child: Text(_teamsErrorMessage!, style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11))))
+                            : _corpTeams.isEmpty
+                                ? Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Text(
+                                        'Nenhuma equipe criada ainda.',
+                                        style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 12),
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
                             shrinkWrap: true,
                             itemCount: _corpTeams.length,
                             itemBuilder: (context, i) {
@@ -3359,5 +3363,4 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       ],
     );
   }
-}
 }
