@@ -67,6 +67,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     {'type': 3, 'label': 'MÍSSEIS'},
     {'type': 4, 'label': 'DISPOSITIVOS'},
     {'type': 5, 'label': 'UTILITÁRIOS'},
+    {'type': 6, 'label': 'NAVES'},
   ];
   int _selectedItemCategory = 1;
 
@@ -5028,9 +5029,13 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
 
   Widget _buildItemImage(String? rawUrl, int itemType) {
     if (rawUrl != null && rawUrl.trim().isNotEmpty) {
-      final String fullUrl = rawUrl.startsWith('http')
-          ? rawUrl
-          : '${widget.apiBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}$rawUrl';
+      String cleanUrl = rawUrl.trim();
+      if (cleanUrl.toLowerCase().endsWith('.svg')) {
+        cleanUrl = cleanUrl.replaceAll(RegExp(r'\.svg$', caseSensitive: false), '.png');
+      }
+      final String fullUrl = cleanUrl.startsWith('http')
+          ? cleanUrl
+          : '${widget.apiBaseUrl}${cleanUrl.startsWith('/') ? '' : '/'}$cleanUrl';
       return Image.network(
         fullUrl,
         fit: BoxFit.cover,
@@ -5048,6 +5053,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       case 3: iconData = Icons.rocket_launch_outlined; break;
       case 4: iconData = Icons.memory; break;
       case 5: iconData = Icons.handyman_outlined; break;
+      case 6: iconData = Icons.flight; break;
     }
     return Center(child: Icon(iconData, color: Colors.white30, size: 18));
   }
