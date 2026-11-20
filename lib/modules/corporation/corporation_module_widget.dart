@@ -60,6 +60,33 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   bool _isLoadingTeams = false;
   String? _teamsErrorMessage;
 
+  // Sub-aba ITENS (Movimentação e Gestão de Itens da Corporação)
+  static const List<Map<String, dynamic>> _itemCategories = [
+    {'type': 1, 'label': 'INSUMOS'},
+    {'type': 2, 'label': 'ARMAS'},
+    {'type': 3, 'label': 'MÍSSEIS'},
+    {'type': 4, 'label': 'DISPOSITIVOS'},
+    {'type': 5, 'label': 'UTILITÁRIOS'},
+  ];
+  int _selectedItemCategory = 1;
+
+  List<Map<String, dynamic>> _corpCargoItems = [];
+  bool _isLoadingCorpCargo = false;
+  int _corpMaxVolume = 100000;
+  int _corpUsedVolume = 0;
+
+  List<Map<String, dynamic>> _memberCargoItems = [];
+  bool _isLoadingMemberCargo = false;
+  int _memberMaxVolume = 50000;
+  int _memberUsedVolume = 0;
+  int? _selectedMemberPilotUid;
+  Map<String, dynamic>? _selectedMemberData;
+
+  String? _selectedTransferSource; // 'CORP' ou 'MEMBER'
+  int? _selectedTransferItemCode;
+  int _transferQuantity = 1;
+  bool _isTransferringItem = false;
+
   // Estados do Passo 2 (Diretório e Inscrição)
   final TextEditingController _searchController = TextEditingController();
   String _searchFilter = '';
@@ -166,6 +193,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           if (data['has_corporation'] == true && data['corporation'] != null) {
             _fetchCorporationTeams(silent: true);
             _fetchCorporationMembers(silent: true);
+            if (_currentAffiliatedTab == 'items') {
+              _fetchCorpCargo(silent: true);
+              _fetchMemberCargo(_selectedMemberPilotUid ?? _pilotUid, silent: true);
+            }
           }
           return;
         }
@@ -2803,6 +2834,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                                 _fetchCorporationStatus();
                                 _fetchCorporationTeams();
                                 _fetchCorporationMembers();
+                                if (_currentAffiliatedTab == 'items') {
+                                  _fetchCorpCargo();
+                                  _fetchMemberCargo(_selectedMemberPilotUid ?? _pilotUid);
+                                }
                               },
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
@@ -2857,11 +2892,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                 const SizedBox(height: 10),
                 _buildAdmittedManagementView(),
               ] else if (_currentAffiliatedTab == 'items') ...[
-                _buildPlaceholderTab(
-                  'ADMINISTRAÇÃO DE ITENS',
-                  'Módulo de hangar corporativo, armazéns de carga compartilhados e movimentação de ativos estelares em desenvolvimento.',
-                  Icons.inventory_2_outlined,
-                ),
+                _buildItemsManagementView(),
               ] else if (_currentAffiliatedTab == 'finance') ...[
                 _buildPlaceholderTab(
                   'PARTE FINANCEIRA',
@@ -3011,7 +3042,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             title: 'ITENS',
             icon: Icons.inventory_2_outlined,
             isSelected: _currentAffiliatedTab == 'items',
-            onTap: () => setState(() => _currentAffiliatedTab = 'items'),
+            onTap: _onItemsTabSelected,
           ),
         ),
         const SizedBox(width: 8),
@@ -3838,5 +3869,1186 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
         ),
       ],
     );
+  }
+
+  // ===========================================================================
+  // MÓDULO DE MOVIMENTAÇÃO DE ITENS DA CORPORAÇÃO (SUB-ABA ITENS)
+  // ===========================================================================
+
+  void _onItemsTabSelected() {
+    setState(() {
+      _currentAffiliatedTab = 'items';
+      if (_selectedMemberPilotUid == null) {
+        _selectedMemberPilotUid = _pilotUid;
+        final myMember = _corpMembers.firstWhere(
+          (m) => m['pilot_uid']?.toString() == _pilotUid.toString(),
+          orElse: () => _corpMembers.isNotEmpty ? _corpMembers.first : <String, dynamic>{},
+        );
+        _selectedMemberData = myMember.isNotEmpty ? myMember : null;
+      }
+    });
+    _fetchCorpCargo();
+    _fetchMemberCargo(_selectedMemberPilotUid ?? _pilotUid);
+  }
+
+  Future<void> _fetchCorpCargo({bool silent = false}) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+    if (!silent) setState(() => _isLoadingCorpCargo = true);
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/items');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        if (decoded['status'] == 'sucesso') {
+          final data = decoded['data'] ?? {};
+          setState(() {
+            _corpCargoItems = List<Map<String, dynamic>>.from(data['items'] ?? []);
+            _corpMaxVolume = (data['max_volume'] as num?)?.toInt() ?? 100000;
+            _corpUsedVolume = (data['used_volume'] as num?)?.toInt() ?? 0;
+            _isLoadingCorpCargo = false;
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar itens da corporação: $e');
+    }
+    if (mounted) setState(() => _isLoadingCorpCargo = false);
+  }
+
+  Future<void> _fetchMemberCargo(int pilotUid, {bool silent = false}) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+    if (!silent) setState(() => _isLoadingMemberCargo = true);
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/member-hangar/$pilotUid');
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final decoded = json.decode(res.body);
+        if (decoded['status'] == 'sucesso') {
+          final data = decoded['data'] ?? {};
+          setState(() {
+            _memberCargoItems = List<Map<String, dynamic>>.from(data['items'] ?? []);
+            _memberMaxVolume = (data['max_volume'] as num?)?.toInt() ?? 50000;
+            _memberUsedVolume = (data['used_volume'] as num?)?.toInt() ?? 0;
+            _isLoadingMemberCargo = false;
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar itens do membro: $e');
+    }
+    if (mounted) setState(() => _isLoadingMemberCargo = false);
+  }
+
+  Map<String, dynamic>? _getSelectedTransferItem() {
+    if (_selectedTransferItemCode == null || _selectedTransferSource == null) return null;
+    final list = _selectedTransferSource == 'CORP' ? _corpCargoItems : _memberCargoItems;
+    try {
+      return list.firstWhere(
+        (it) => (it['item_code'] as num).toInt() == _selectedTransferItemCode,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _handleTransferItem(String direction) async {
+    final corpId = _corpUid;
+    if (corpId == null || _isTransferringItem) return;
+    final item = _getSelectedTransferItem();
+    if (item == null) return;
+
+    final targetPilotUid = _selectedMemberPilotUid ?? _pilotUid;
+    final itemCode = (item['item_code'] as num).toInt();
+    final quantity = _transferQuantity;
+
+    setState(() => _isTransferringItem = true);
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/transfer-item');
+      final res = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'pilot_uid': targetPilotUid,
+          'item_code': itemCode,
+          'quantity': quantity,
+          'direction': direction,
+          'operator_pilot_uid': _pilotUid,
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      final decoded = json.decode(res.body);
+      if (!mounted) return;
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              decoded['mensagem'] ?? 'Transferência realizada com sucesso!',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF00382B),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() {
+          _selectedTransferItemCode = null;
+          _selectedTransferSource = null;
+          _transferQuantity = 1;
+        });
+        await _fetchCorpCargo(silent: true);
+        await _fetchMemberCargo(targetPilotUid, silent: true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              decoded['mensagem'] ?? 'Falha ao transferir item.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erro de conexão com o servidor: $e',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTransferringItem = false);
+    }
+  }
+
+  Widget _buildItemsManagementView() {
+    final selectedItem = _getSelectedTransferItem();
+    final int maxItemAmount = selectedItem != null
+        ? ((selectedItem['amount'] as num?)?.toInt() ?? 0)
+        : 0;
+
+    final bool isMemberItemSelected = selectedItem != null && _selectedTransferSource == 'MEMBER';
+    final bool isCorpItemSelected = selectedItem != null && _selectedTransferSource == 'CORP';
+
+    final bool canMoveToCorp = !_isTransferringItem &&
+        isMemberItemSelected &&
+        _transferQuantity > 0 &&
+        _transferQuantity <= maxItemAmount;
+
+    final bool canMoveToMember = !_isTransferringItem &&
+        isCorpItemSelected &&
+        _transferQuantity > 0 &&
+        _transferQuantity <= maxItemAmount;
+
+    final memberName = _selectedMemberData?['pilot_name'] ??
+        _corpMembers.firstWhere(
+          (m) => m['pilot_uid']?.toString() == _selectedMemberPilotUid?.toString(),
+          orElse: () => {'pilot_name': 'VOCÊ'},
+        )['pilot_name'] ?? 'PILOTO';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. Barra de Categorias de Itens (INSUMOS, ARMAS, MÍSSEIS, DISPOSITIVOS, UTILITÁRIOS)
+        _buildItemCategoriesBar(),
+        const SizedBox(height: 8),
+
+        // 2. Box Superior: Área de Carga da Corporação
+        _buildCargoBox(
+          title: 'ÁREA DE CARGA DA CORPORAÇÃO',
+          subtitle: 'LIVRE: ${_formatCredits(_corpMaxVolume - _corpUsedVolume)} m³ / MÁX: ${_formatCredits(_corpMaxVolume)} m³',
+          items: _corpCargoItems.where((it) => (it['item_type'] as num?)?.toInt() == _selectedItemCategory).toList(),
+          sourceKey: 'CORP',
+          isLoading: _isLoadingCorpCargo,
+          accentColor: _cyanColor,
+          emptyMessage: 'Nenhum item deste grupo na área de carga da corporação.',
+        ),
+        const SizedBox(height: 8),
+
+        // 3. Barra Central: [PARA A CORPORAÇÃO] [- QTD +] [PARA O MEMBRO] [HISTÓRICO]
+        _buildItemTransferControlBar(
+          canMoveToCorp: canMoveToCorp,
+          canMoveToMember: canMoveToMember,
+          maxItemAmount: maxItemAmount,
+        ),
+        const SizedBox(height: 8),
+
+        // 4. Box Inferior: Área de Carga do Membro
+        _buildCargoBox(
+          title: 'ÁREA DE CARGA DE:',
+          memberName: memberName,
+          isMemberBox: true,
+          subtitle: 'OCUPADO: ${_formatCredits(_memberUsedVolume)} / ${_formatCredits(_memberMaxVolume)} m³ (LIVRE: ${_formatCredits(_memberMaxVolume - _memberUsedVolume)} m³)',
+          items: _memberCargoItems.where((it) => (it['item_type'] as num?)?.toInt() == _selectedItemCategory).toList(),
+          sourceKey: 'MEMBER',
+          isLoading: _isLoadingMemberCargo,
+          accentColor: _amberAccent,
+          emptyMessage: 'Nenhum item deste grupo na área de carga selecionada.',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemCategoriesBar() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _cyanColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: _itemCategories.map((cat) {
+          final int type = cat['type'] as int;
+          final String label = cat['label'] as String;
+          final bool isSelected = _selectedItemCategory == type;
+
+          return Expanded(
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedItemCategory = type;
+                  _selectedTransferItemCode = null;
+                  _selectedTransferSource = null;
+                  _transferQuantity = 1;
+                });
+              },
+              borderRadius: BorderRadius.circular(4),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                decoration: BoxDecoration(
+                  color: isSelected ? _greenAccent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                  border: isSelected
+                      ? Border.all(color: _greenAccent, width: 1)
+                      : Border.all(color: Colors.transparent),
+                ),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: GoogleFonts.shareTechMono(
+                      color: isSelected ? Colors.black : Colors.white70,
+                      fontSize: 10.5,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildCargoBox({
+    required String title,
+    String? memberName,
+    bool isMemberBox = false,
+    required String subtitle,
+    required List<Map<String, dynamic>> items,
+    required String sourceKey,
+    required bool isLoading,
+    required Color accentColor,
+    required String emptyMessage,
+  }) {
+    return Container(
+      height: 155,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _cyanColor.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              if (!isMemberBox) ...[
+                Text(
+                  title,
+                  style: GoogleFonts.shareTechMono(
+                    color: _greenAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  title,
+                  style: GoogleFonts.shareTechMono(
+                    color: _cyanColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                if (_isLeaderOrOfficer) ...[
+                  InkWell(
+                    onTap: _showMemberSelectorDialog,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _cyanColor.withOpacity(0.12),
+                        border: Border.all(color: _cyanColor, width: 1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            memberName?.toUpperCase() ?? 'MEMBRO',
+                            style: GoogleFonts.shareTechMono(
+                              color: _cyanColor,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_drop_down, color: _cyanColor, size: 14),
+                        ],
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      border: Border.all(color: Colors.white24, width: 1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      memberName?.toUpperCase() ?? 'VOCÊ',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+              const Spacer(),
+              Text(
+                subtitle,
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.white60,
+                  fontSize: 9.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Divider(color: Colors.white12, height: 1),
+          const SizedBox(height: 6),
+
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator(color: _cyanColor, strokeWidth: 2))
+                : items.isEmpty
+                    ? Center(
+                        child: Text(
+                          emptyMessage,
+                          style: GoogleFonts.shareTechMono(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      )
+                    : GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 82,
+                          mainAxisExtent: 90,
+                          crossAxisSpacing: 6,
+                          mainAxisSpacing: 6,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final int itemCode = (item['item_code'] as num).toInt();
+                          final bool isSelected = _selectedTransferSource == sourceKey &&
+                              _selectedTransferItemCode == itemCode;
+                          final int amount = (item['amount'] as num?)?.toInt() ?? 0;
+                          final int itemType = (item['item_type'] as num?)?.toInt() ?? 1;
+
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedTransferSource = sourceKey;
+                                _selectedTransferItemCode = itemCode;
+                                _transferQuantity = 1;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: isSelected ? accentColor.withOpacity(0.18) : _cardBg,
+                                border: Border.all(
+                                  color: isSelected ? accentColor : Colors.white24,
+                                  width: isSelected ? 1.6 : 0.8,
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(
+                                    child: Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF0B0E14),
+                                              borderRadius: BorderRadius.circular(2),
+                                            ),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: _buildItemImage(
+                                              item['image_url'] as String?,
+                                              itemType,
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          right: 2,
+                                          bottom: 2,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withOpacity(0.85),
+                                              border: Border.all(color: accentColor, width: 0.7),
+                                              borderRadius: BorderRadius.circular(2),
+                                            ),
+                                            child: Text(
+                                              'QTD: $amount',
+                                              style: GoogleFonts.shareTechMono(
+                                                color: accentColor,
+                                                fontSize: 7.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+
+                                  Text(
+                                    (item['name'] ?? '').toString().toUpperCase(),
+                                    style: GoogleFonts.shareTechMono(
+                                      color: isSelected ? accentColor : Colors.white,
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemTransferControlBar({
+    required bool canMoveToCorp,
+    required bool canMoveToMember,
+    required int maxItemAmount,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: _panelBg,
+        border: Border.all(color: _cyanColor.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _greenAccent,
+                  disabledBackgroundColor: Colors.white12,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                ),
+                onPressed: canMoveToCorp ? () => _handleTransferItem('TO_CORPORATION') : null,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.arrow_upward_rounded,
+                        color: canMoveToCorp ? Colors.black : Colors.white24,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'PARA A CORPORAÇÃO',
+                        style: GoogleFonts.shareTechMono(
+                          color: canMoveToCorp ? Colors.black : Colors.white24,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 6),
+
+          Container(
+            height: 28,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D121B),
+              border: Border.all(color: _cyanColor.withOpacity(0.6)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: _selectedTransferItemCode != null && _transferQuantity > 1
+                      ? () => setState(() => _transferQuantity--)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Icon(
+                      Icons.remove,
+                      color: _selectedTransferItemCode != null && _transferQuantity > 1
+                          ? _cyanColor
+                          : Colors.white24,
+                      size: 14,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'QTD: $_transferQuantity',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: _selectedTransferItemCode != null && _transferQuantity < maxItemAmount
+                      ? () => setState(() => _transferQuantity++)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Icon(
+                      Icons.add,
+                      color: _selectedTransferItemCode != null && _transferQuantity < maxItemAmount
+                          ? _cyanColor
+                          : Colors.white24,
+                      size: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 6),
+
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cyanColor,
+                  disabledBackgroundColor: Colors.white12,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                ),
+                onPressed: canMoveToMember ? () => _handleTransferItem('TO_MEMBER') : null,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.arrow_downward_rounded,
+                        color: canMoveToMember ? Colors.black : Colors.white24,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'PARA O MEMBRO',
+                        style: GoogleFonts.shareTechMono(
+                          color: canMoveToMember ? Colors.black : Colors.white24,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 6),
+
+          SizedBox(
+            height: 28,
+            width: 32,
+            child: IconButton(
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF0D121B),
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  side: BorderSide(color: _cyanColor.withOpacity(0.6)),
+                ),
+              ),
+              icon: const Icon(Icons.receipt_long, color: _cyanColor, size: 15),
+              tooltip: 'Histórico de Movimentações',
+              onPressed: _showItemTransactionsDialog,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMemberSelectorDialog() {
+    String search = '';
+    String selectedRole = 'all';
+    String selectedTeam = 'all';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = _corpMembers.where((m) {
+              final name = (m['pilot_name'] ?? '').toString().toLowerCase();
+              final role = (m['role'] ?? 'member').toString().toLowerCase();
+              final teamUid = m['team_uid']?.toString() ?? 'none';
+
+              if (search.isNotEmpty && !name.contains(search.toLowerCase())) {
+                return false;
+              }
+              if (selectedRole != 'all' && role != selectedRole) {
+                return false;
+              }
+              if (selectedTeam != 'all') {
+                if (selectedTeam == 'none' && teamUid != 'none') return false;
+                if (selectedTeam != 'none' && teamUid != selectedTeam) return false;
+              }
+              return true;
+            }).toList();
+
+            return Dialog(
+              backgroundColor: const Color(0xFF0B0E14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: const BorderSide(color: _cyanColor, width: 1.5),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480, maxHeight: 520),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.person_search, color: _cyanColor, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'SELECIONAR CARGA DE MEMBRO',
+                                style: GoogleFonts.shareTechMono(
+                                  color: _cyanColor,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      TextField(
+                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                        decoration: InputDecoration(
+                          hintText: 'Filtrar por nome do piloto...',
+                          hintStyle: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+                          prefixIcon: const Icon(Icons.search, color: _cyanColor, size: 16),
+                          filled: true,
+                          fillColor: const Color(0xFF151922),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: const BorderSide(color: Colors.white24),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: const BorderSide(color: _cyanColor),
+                          ),
+                        ),
+                        onChanged: (val) {
+                          setModalState(() => search = val);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedRole,
+                              dropdownColor: const Color(0xFF151922),
+                              isDense: true,
+                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                              decoration: InputDecoration(
+                                labelText: 'Cargo',
+                                labelStyle: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 10),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                filled: true,
+                                fillColor: const Color(0xFF151922),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'all', child: Text('Todos os Cargos')),
+                                DropdownMenuItem(value: 'leader', child: Text('Líder')),
+                                DropdownMenuItem(value: 'officer', child: Text('Oficial')),
+                                DropdownMenuItem(value: 'member', child: Text('Membro')),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) setModalState(() => selectedRole = val);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedTeam,
+                              dropdownColor: const Color(0xFF151922),
+                              isDense: true,
+                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                              decoration: InputDecoration(
+                                labelText: 'Equipe',
+                                labelStyle: GoogleFonts.shareTechMono(color: _cyanColor, fontSize: 10),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                filled: true,
+                                fillColor: const Color(0xFF151922),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: 'all', child: Text('Todas as Equipes')),
+                                const DropdownMenuItem(value: 'none', child: Text('Sem Equipe')),
+                                ..._corpTeams.map((t) => DropdownMenuItem(
+                                  value: t['team_uid'].toString(),
+                                  child: Text(t['description'] ?? 'Equipe #${t['team_uid']}'),
+                                )),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) setModalState(() => selectedTeam = val);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(color: Colors.white12, height: 1),
+                      const SizedBox(height: 6),
+
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Nenhum membro encontrado com os filtros aplicados.',
+                                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                itemBuilder: (context, idx) {
+                                  final m = filtered[idx];
+                                  final pUid = (m['pilot_uid'] as num).toInt();
+                                  final isCurrent = _selectedMemberPilotUid == pUid;
+                                  final role = (m['role'] ?? 'member').toString();
+                                  final roleLabel = role == 'leader' ? 'Líder' : (role == 'officer' ? 'Oficial' : 'Membro');
+                                  final teamName = m['team_name'] ?? 'Sem Equipe';
+
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isCurrent ? _cyanColor.withOpacity(0.12) : const Color(0xFF12161F),
+                                      border: Border.all(
+                                        color: isCurrent ? _cyanColor : Colors.white12,
+                                        width: isCurrent ? 1.4 : 0.8,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          role == 'leader' ? Icons.military_tech : (role == 'officer' ? Icons.security : Icons.person_outline),
+                                          color: role == 'leader' ? _amberAccent : (role == 'officer' ? _cyanColor : Colors.white70),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                (m['pilot_name'] ?? 'Piloto').toString().toUpperCase(),
+                                                style: GoogleFonts.shareTechMono(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Text(
+                                                '$roleLabel • $teamName',
+                                                style: GoogleFonts.shareTechMono(
+                                                  color: Colors.white54,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: isCurrent ? _greenAccent : _cyanColor,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            visualDensity: VisualDensity.compact,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                          ),
+                                          onPressed: () {
+                                            Navigator.of(ctx).pop();
+                                            setState(() {
+                                              _selectedMemberPilotUid = pUid;
+                                              _selectedMemberData = m;
+                                              _selectedTransferItemCode = null;
+                                              _selectedTransferSource = null;
+                                              _transferQuantity = 1;
+                                            });
+                                            _fetchMemberCargo(pUid);
+                                          },
+                                          child: Text(
+                                            isCurrent ? 'SELECIONADO' : 'SELECIONAR',
+                                            style: GoogleFonts.shareTechMono(
+                                              color: Colors.black,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showItemTransactionsDialog() {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return FutureBuilder<http.Response>(
+          future: http.get(
+            Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/item-transactions?caller_pilot_uid=$_pilotUid'),
+          ).timeout(const Duration(seconds: 8)),
+          builder: (context, snapshot) {
+            List<Map<String, dynamic>> transactions = [];
+            bool loading = snapshot.connectionState == ConnectionState.waiting;
+            String? error;
+
+            if (snapshot.hasError) {
+              error = 'Erro ao carregar histórico: ${snapshot.error}';
+            } else if (snapshot.hasData) {
+              final res = snapshot.data!;
+              if (res.statusCode == 200) {
+                final decoded = json.decode(res.body);
+                if (decoded['status'] == 'sucesso') {
+                  transactions = List<Map<String, dynamic>>.from(decoded['data'] ?? []);
+                } else {
+                  error = decoded['mensagem'] ?? 'Falha ao buscar movimentações.';
+                }
+              } else {
+                error = 'Erro no servidor: ${res.statusCode}';
+              }
+            }
+
+            return Dialog(
+              backgroundColor: const Color(0xFF0B0E14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: const BorderSide(color: _cyanColor, width: 1.5),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 540),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.receipt_long, color: _cyanColor, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'HISTÓRICO DE MOVIMENTAÇÃO',
+                                style: GoogleFonts.shareTechMono(
+                                  color: _cyanColor,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _isLeaderOrOfficer
+                            ? 'Registro de todas as doações e retiradas de itens da corporação.'
+                            : 'Registro das movimentações de itens associadas a você.',
+                        style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(color: Colors.white12, height: 1),
+                      const SizedBox(height: 8),
+
+                      Expanded(
+                        child: loading
+                            ? const Center(child: CircularProgressIndicator(color: _cyanColor, strokeWidth: 2))
+                            : error != null
+                                ? Center(
+                                    child: Text(
+                                      error,
+                                      style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  )
+                                : transactions.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          'Nenhuma movimentação de itens registrada até o momento.',
+                                          style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: transactions.length,
+                                        separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                        itemBuilder: (context, idx) {
+                                          final t = transactions[idx];
+                                          final bool isToCorp = t['direction'] == 'TO_CORPORATION';
+                                          final String itemName = t['item_name'] ?? 'Item';
+                                          final int qty = (t['quantity'] as num?)?.toInt() ?? 1;
+                                          final String pilotName = t['pilot_name'] ?? 'Piloto';
+                                          final String operatorName = t['operator_name'] ?? 'Operador';
+                                          final String dateStr = _formatDateTime(t['created_at']);
+                                          final Color badgeColor = isToCorp ? _greenAccent : _cyanColor;
+
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF12161F),
+                                              border: Border.all(color: Colors.white12),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(5),
+                                                  decoration: BoxDecoration(
+                                                    color: badgeColor.withOpacity(0.12),
+                                                    border: Border.all(color: badgeColor, width: 0.8),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Icon(
+                                                    isToCorp ? Icons.arrow_upward : Icons.arrow_downward,
+                                                    color: badgeColor,
+                                                    size: 16,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+
+                                                Container(
+                                                  width: 34,
+                                                  height: 34,
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF0B0E14),
+                                                    borderRadius: BorderRadius.circular(3),
+                                                    border: Border.all(color: Colors.white12),
+                                                  ),
+                                                  clipBehavior: Clip.antiAlias,
+                                                  child: _buildItemImage(
+                                                    t['image_url'] as String?,
+                                                    (t['item_type'] as num?)?.toInt() ?? 1,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Text(
+                                                            itemName.toUpperCase(),
+                                                            style: GoogleFonts.shareTechMono(
+                                                              color: Colors.white,
+                                                              fontSize: 11,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 6),
+                                                          Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                            decoration: BoxDecoration(
+                                                              color: badgeColor.withOpacity(0.15),
+                                                              borderRadius: BorderRadius.circular(2),
+                                                            ),
+                                                            child: Text(
+                                                              'QTD: $qty',
+                                                              style: GoogleFonts.shareTechMono(
+                                                                color: badgeColor,
+                                                                fontSize: 9,
+                                                                fontWeight: FontWeight.bold,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        isToCorp ? 'Doador: $pilotName' : 'Destinatário: $pilotName',
+                                                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                                                      ),
+                                                      if (operatorName != pilotName) ...[
+                                                        Text(
+                                                          'Por: $operatorName',
+                                                          style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+
+                                                Text(
+                                                  dateStr,
+                                                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildItemImage(String? rawUrl, int itemType) {
+    if (rawUrl != null && rawUrl.trim().isNotEmpty) {
+      final String fullUrl = rawUrl.startsWith('http')
+          ? rawUrl
+          : '${widget.apiBaseUrl}${rawUrl.startsWith('/') ? '' : '/'}$rawUrl';
+      return Image.network(
+        fullUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _buildItemFallbackIcon(itemType),
+      );
+    }
+    return _buildItemFallbackIcon(itemType);
+  }
+
+  Widget _buildItemFallbackIcon(int itemType) {
+    IconData iconData = Icons.category_outlined;
+    switch (itemType) {
+      case 1: iconData = Icons.hexagon_outlined; break;
+      case 2: iconData = Icons.gps_fixed; break;
+      case 3: iconData = Icons.rocket_launch_outlined; break;
+      case 4: iconData = Icons.memory; break;
+      case 5: iconData = Icons.handyman_outlined; break;
+    }
+    return Center(child: Icon(iconData, color: Colors.white30, size: 18));
   }
 }
