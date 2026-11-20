@@ -61,15 +61,16 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   String? _teamsErrorMessage;
 
   // Sub-aba ITENS (Movimentação e Gestão de Itens da Corporação)
+  // Grupos principais (item_type: 6=Naves, 1..5=Itens) com larguras proporcionais (flex) como no Mercado
   static const List<Map<String, dynamic>> _itemCategories = [
-    {'type': 1, 'label': 'INSUMOS'},
-    {'type': 2, 'label': 'ARMAS'},
-    {'type': 3, 'label': 'MÍSSEIS'},
-    {'type': 4, 'label': 'DISPOSITIVOS'},
-    {'type': 5, 'label': 'UTILITÁRIOS'},
-    {'type': 6, 'label': 'NAVES'},
+    {'type': 6, 'label': 'NAVES', 'flex': 8},
+    {'type': 1, 'label': 'INSUMOS', 'flex': 10},
+    {'type': 2, 'label': 'ARMAS', 'flex': 8},
+    {'type': 3, 'label': 'MÍSSEIS', 'flex': 10},
+    {'type': 4, 'label': 'DISPOSITIVOS', 'flex': 14},
+    {'type': 5, 'label': 'UTILITÁRIOS', 'flex': 14},
   ];
-  int _selectedItemCategory = 1;
+  int _selectedItemCategory = 6;
 
   List<Map<String, dynamic>> _corpCargoItems = [];
   bool _isLoadingCorpCargo = false;
@@ -4102,20 +4103,17 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   }
 
   Widget _buildItemCategoriesBar() {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _cyanColor.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: _itemCategories.map((cat) {
-          final int type = cat['type'] as int;
-          final String label = cat['label'] as String;
-          final bool isSelected = _selectedItemCategory == type;
+    return Row(
+      children: _itemCategories.map((cat) {
+        final int type = cat['type'] as int;
+        final String label = cat['label'] as String;
+        final int flexWeight = (cat['flex'] as int?) ?? 10;
+        final bool isSelected = _selectedItemCategory == type;
 
-          return Expanded(
+        return Expanded(
+          flex: flexWeight,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: InkWell(
               onTap: () {
                 setState(() {
@@ -4128,13 +4126,14 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
               borderRadius: BorderRadius.circular(4),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(vertical: 5),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
                 decoration: BoxDecoration(
-                  color: isSelected ? _greenAccent : Colors.transparent,
+                  color: isSelected ? _greenAccent : _panelBg,
                   borderRadius: BorderRadius.circular(4),
-                  border: isSelected
-                      ? Border.all(color: _greenAccent, width: 1)
-                      : Border.all(color: Colors.transparent),
+                  border: Border.all(
+                    color: isSelected ? _greenAccent : _cyanColor,
+                    width: isSelected ? 1.8 : 1.0,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: FittedBox(
@@ -4142,18 +4141,19 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                   child: Text(
                     label,
                     style: GoogleFonts.shareTechMono(
-                      color: isSelected ? Colors.black : Colors.white70,
-                      fontSize: 10.5,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      letterSpacing: 0.8,
+                      color: isSelected ? Colors.black : Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
             ),
-          );
-        }).toList(),
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 
