@@ -5570,7 +5570,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       (m) => m['pilot_uid']?.toString() == (_selectedMemberPilotUid ?? _pilotUid).toString(),
       orElse: () => {},
     );
-    final String memberRole = (selectedMemberInfo['role'] ?? (_selectedMemberPilotUid == null ? _corporationData?['role'] : 'member') ?? 'member').toString().toLowerCase();
+    String memberRole = (selectedMemberInfo['role'] ?? 'member').toString().toLowerCase();
+    if (isOwnAccount && _corporationData != null && _corporationData!['role'] != null) {
+      memberRole = _corporationData!['role'].toString().toLowerCase();
+    }
     final String memberRoleLabel = memberRole == 'leader' ? 'Líder' : (memberRole == 'officer' ? 'Oficial' : 'Membro');
     final String memberTeam = selectedMemberInfo['team_name'] ?? 'Sem Equipe';
 
