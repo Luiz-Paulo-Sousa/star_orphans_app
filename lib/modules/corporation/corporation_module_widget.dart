@@ -3975,10 +3975,25 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       );
       return;
     }
+
+    final targetPilotUid = _selectedMemberPilotUid ?? _pilotUid;
+    if (direction == 'TO_CORPORATION' && targetPilotUid != _pilotUid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Você só pode doar itens do seu próprio armazém para a corporação.',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final item = _getSelectedTransferItem();
     if (item == null) return;
 
-    final targetPilotUid = _selectedMemberPilotUid ?? _pilotUid;
     final itemCode = (item['item_code'] as num).toInt();
     final quantity = _transferQuantity;
 
@@ -4056,7 +4071,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final bool isMemberItemSelected = selectedItem != null && _selectedTransferSource == 'MEMBER';
     final bool isCorpItemSelected = selectedItem != null && _selectedTransferSource == 'CORP';
 
-    final bool canMoveToCorp = !_isTransferringItem &&
+    final bool isOwnCargo = _selectedMemberPilotUid == null || _selectedMemberPilotUid == _pilotUid;
+
+    final bool canMoveToCorp = isOwnCargo &&
+        !_isTransferringItem &&
         isMemberItemSelected &&
         _transferQuantity > 0 &&
         _transferQuantity <= maxItemAmount;
