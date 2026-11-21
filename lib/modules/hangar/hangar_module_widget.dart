@@ -2798,7 +2798,7 @@ class _HangarModuleWidgetState extends State<HangarModuleWidget> {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(2),
                               child: _buildItemImage(
-                                currentSlot?['image_url']?.toString(),
+                                currentSlot['image_url']?.toString(),
                                 _itemTypeForCategory(_selectedLoadoutCategory),
                               ),
                             ),

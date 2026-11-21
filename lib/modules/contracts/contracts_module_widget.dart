@@ -48,7 +48,6 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
 
   // Estado de carregamento
   bool _isLoading = false;
-  String? _errorMessage;
 
   // Contrato atualmente selecionado (inicia como null para abrir SEMPRE na lista)
   Map<String, dynamic>? _selectedContract;
@@ -232,7 +231,6 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   Future<void> _fetchContractsData() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     final pilotUid = _getPilotUid();

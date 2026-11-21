@@ -40,7 +40,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   num _pilotCredits = 0;
 
   // Alternador para testes rápidos no VS Code
-  bool _simulateNoCorporation = false;
+  final bool _simulateNoCorporation = false;
 
   // Navegação de telas no módulo (Freelancer): 'initial', 'apply', 'create'
   String _currentView = 'initial';
