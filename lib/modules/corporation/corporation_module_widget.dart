@@ -3962,6 +3962,19 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   Future<void> _handleTransferItem(String direction) async {
     final corpId = _corpUid;
     if (corpId == null || _isTransferringItem) return;
+    if (direction == 'TO_MEMBER' && !_isLeaderOrOfficer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Apenas o Líder e Oficiais podem transferir itens da corporação para membros.',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     final item = _getSelectedTransferItem();
     if (item == null) return;
 
@@ -4048,7 +4061,8 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
         _transferQuantity > 0 &&
         _transferQuantity <= maxItemAmount;
 
-    final bool canMoveToMember = !_isTransferringItem &&
+    final bool canMoveToMember = _isLeaderOrOfficer &&
+        !_isTransferringItem &&
         isCorpItemSelected &&
         _transferQuantity > 0 &&
         _transferQuantity <= maxItemAmount;
