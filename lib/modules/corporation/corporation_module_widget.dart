@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
@@ -38,6 +39,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
   bool _hasPendingApplication = false;
   Map<String, dynamic>? _pendingApplication;
   num _pilotCredits = 0;
+  int? _pilotStationId;
+  String? _pilotStationName;
+
+  // Estados da Sub-aba FINANCEIRO
+  final TextEditingController _financeAmountController = TextEditingController();
+  bool _isTransferringCredits = false;
 
   // Alternador para testes rápidos no VS Code
   final bool _simulateNoCorporation = false;
@@ -120,6 +127,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     _searchController.dispose();
     _corpNameController.dispose();
     _stationSearchController.dispose();
+    _financeAmountController.dispose();
     super.dispose();
   }
 
@@ -188,6 +196,12 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
             _pendingApplication = data['pending_application'];
             if (data['pilot_credits'] != null) {
               _pilotCredits = (data['pilot_credits'] as num);
+            }
+            if (data['pilot_station_id'] != null) {
+              _pilotStationId = int.tryParse(data['pilot_station_id'].toString());
+            }
+            if (data['pilot_station_name'] != null) {
+              _pilotStationName = data['pilot_station_name']?.toString();
             }
             _isLoading = false;
           });
@@ -2766,6 +2780,17 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
         myMemberInfo['is_founder'] == '1';
   }
 
+  /// Verifica se o piloto está acoplado presencialmente na estação base da corporação
+  bool get _isPilotAtBaseStation {
+    final corpStationId = _corporationData?['station_uid'];
+    if (corpStationId == null) return true;
+    final pilotStation = _pilotStationId ??
+        widget.profileData?['operator']?['station'] ??
+        widget.profileData?['station']?['id'];
+    if (pilotStation == null) return true;
+    return pilotStation.toString() == corpStationId.toString();
+  }
+
   /// Visão caso o jogador já pertença a uma corporação
   Widget _buildAffiliatedView() {
     final corp = _corporationData ?? {};
@@ -2896,10 +2921,9 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
               ] else if (_currentAffiliatedTab == 'items') ...[
                 _buildItemsManagementView(),
               ] else if (_currentAffiliatedTab == 'finance') ...[
-                _buildPlaceholderTab(
-                  'PARTE FINANCEIRA',
-                  'Módulo de tesouraria, fluxo de caixa, transferências e histórico financeiro em desenvolvimento.',
-                  Icons.account_balance_wallet_outlined,
+                _buildFinanceManagementView(
+                  corpCredits: corpCredits,
+                  isLeaderOrOfficer: isLeaderOrOfficer,
                 ),
               ],
             ],
@@ -3891,6 +3915,20 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     });
     _fetchCorpCargo();
     _fetchMemberCargo(_selectedMemberPilotUid ?? _pilotUid);
+
+    if (!_isPilotAtBaseStation) {
+      final baseStation = _corporationData?['station_name'] ?? 'estação base da corporação';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Aviso: Transações de itens só podem ser feitas localmente na estação base ($baseStation).',
+            style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+          ),
+          backgroundColor: const Color(0xFF8A5A00),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<void> _fetchCorpCargo({bool silent = false}) async {
@@ -3991,6 +4029,21 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
       return;
     }
 
+    if (!_isPilotAtBaseStation) {
+      final baseStation = _corporationData?['station_name'] ?? 'estação base da corporação';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Transações de itens só podem ser realizadas presencialmente na estação base ($baseStation).',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final item = _getSelectedTransferItem();
     if (item == null) return;
 
@@ -4062,6 +4115,79 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     }
   }
 
+  Widget _buildStationRestrictionBanner(String baseStationName) {
+    final currentStationName = _pilotStationName ?? 'Desconhecida / Em Trânsito';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x33FFB800),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _amberAccent, width: 1.2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.location_off_outlined, color: _amberAccent, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ACESSO RESTRITO - TRANSAÇÃO LOCAL OBRIGATÓRIA',
+                  style: GoogleFonts.shareTechMono(
+                    color: _amberAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Transações e doações de itens e naves só podem ser realizadas presencialmente na estação onde a sua corporação foi fundada.',
+                  style: GoogleFonts.shareTechMono(
+                    color: Colors.white,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      'ESTAÇÃO BASE: $baseStationName',
+                      style: GoogleFonts.shareTechMono(
+                        color: _cyanColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '•',
+                      style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 10),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'SUA POSIÇÃO: $currentStationName',
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white70,
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildItemsManagementView() {
     final selectedItem = _getSelectedTransferItem();
     final int maxItemAmount = selectedItem != null
@@ -4072,14 +4198,17 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
     final bool isCorpItemSelected = selectedItem != null && _selectedTransferSource == 'CORP';
 
     final bool isOwnCargo = _selectedMemberPilotUid == null || _selectedMemberPilotUid == _pilotUid;
+    final bool isPilotAtBase = _isPilotAtBaseStation;
 
-    final bool canMoveToCorp = isOwnCargo &&
+    final bool canMoveToCorp = isPilotAtBase &&
+        isOwnCargo &&
         !_isTransferringItem &&
         isMemberItemSelected &&
         _transferQuantity > 0 &&
         _transferQuantity <= maxItemAmount;
 
-    final bool canMoveToMember = _isLeaderOrOfficer &&
+    final bool canMoveToMember = isPilotAtBase &&
+        _isLeaderOrOfficer &&
         !_isTransferringItem &&
         isCorpItemSelected &&
         _transferQuantity > 0 &&
@@ -4097,6 +4226,10 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
         // 1. Barra de Categorias de Itens (INSUMOS, ARMAS, MÍSSEIS, DISPOSITIVOS, UTILITÁRIOS)
         _buildItemCategoriesBar(),
         const SizedBox(height: 8),
+
+        if (!isPilotAtBase) ...[
+          _buildStationRestrictionBanner(_corporationData?['station_name'] ?? 'Estação Base'),
+        ],
 
         // 2. Box Superior: Área de Carga da Corporação
         _buildCargoBox(
@@ -4631,7 +4764,7 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
                               const Icon(Icons.person_search, color: _cyanColor, size: 20),
                               const SizedBox(width: 8),
                               Text(
-                                'SELECIONAR CARGA DE MEMBRO',
+                                'SELECIONAR MEMBRO',
                                 style: GoogleFonts.shareTechMono(
                                   color: _cyanColor,
                                   fontSize: 14,
@@ -5056,6 +5189,795 @@ class _CorporationModuleWidgetState extends State<CorporationModuleWidget> {
           },
         );
       },
+    );
+  }
+
+  // ===========================================================================
+  // MÓDULO FINANCEIRO DA CORPORAÇÃO (SUB-ABA FINANCEIRO)
+  // ===========================================================================
+
+  Future<void> _handleTransferCredits(String direction) async {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    final text = _financeAmountController.text.replaceAll('.', '').trim();
+    final amount = int.tryParse(text) ?? 0;
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Digite uma quantidade de créditos válida para transferir.',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _amberAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final targetPilotUid = _selectedMemberPilotUid ?? _pilotUid;
+
+    // Validações
+    if (direction == 'TO_CORPORATION') {
+      if (targetPilotUid != _pilotUid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Você só pode doar créditos da sua própria carteira para a corporação.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      if (amount > _pilotCredits) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Saldo de créditos insuficiente na sua carteira.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    } else if (direction == 'TO_MEMBER') {
+      if (!_isLeaderOrOfficer) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Apenas o Líder e Oficiais podem transferir créditos da corporação para membros.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      final corpCredits = num.tryParse(_corporationData?['credits']?.toString() ?? '0') ?? 0;
+      if (amount > corpCredits) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Saldo de créditos insuficiente no caixa da corporação.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() => _isTransferringCredits = true);
+
+    try {
+      final uri = Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/transfer-credits');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'operator_pilot_uid': _pilotUid,
+          'pilot_uid': targetPilotUid,
+          'amount': amount,
+          'direction': direction,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final decoded = json.decode(response.body);
+      if (response.statusCode == 200 && decoded['status'] == 'sucesso') {
+        _financeAmountController.clear();
+        final data = decoded['data'] ?? {};
+        setState(() {
+          if (data['corporation_credits'] != null && _corporationData != null) {
+            _corporationData!['credits'] = data['corporation_credits'];
+          }
+          if (data['operator_credits'] != null) {
+            _pilotCredits = data['operator_credits'] as num;
+          }
+        });
+
+        if (widget.onProfileRefresh != null) {
+          widget.onProfileRefresh!();
+        }
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              decoded['mensagem'] ?? 'Transferência financeira realizada com sucesso.',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: _greenAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              decoded['mensagem'] ?? 'Falha na transferência de créditos.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+            backgroundColor: _redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erro de conexão com o servidor: $e',
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+          backgroundColor: _redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTransferringCredits = false);
+    }
+  }
+
+  void _showCreditTransactionsModal() {
+    final corpId = _corpUid;
+    if (corpId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return FutureBuilder<http.Response>(
+          future: http.get(
+            Uri.parse('${widget.apiBaseUrl}/api/corporation/$corpId/credit-transactions?pilot_uid=$_pilotUid'),
+          ).timeout(const Duration(seconds: 8)),
+          builder: (context, snapshot) {
+            List<Map<String, dynamic>> transactions = [];
+            bool loading = snapshot.connectionState == ConnectionState.waiting;
+            String? error;
+
+            if (snapshot.hasError) {
+              error = 'Erro ao carregar histórico: ${snapshot.error}';
+            } else if (snapshot.hasData) {
+              final res = snapshot.data!;
+              if (res.statusCode == 200) {
+                final decoded = json.decode(res.body);
+                if (decoded['status'] == 'sucesso') {
+                  transactions = List<Map<String, dynamic>>.from(decoded['data'] ?? []);
+                } else {
+                  error = decoded['mensagem'] ?? 'Falha ao buscar movimentações financeiras.';
+                }
+              } else {
+                error = 'Erro no servidor: ${res.statusCode}';
+              }
+            }
+
+            return Dialog(
+              backgroundColor: const Color(0xFF0B0E14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: const BorderSide(color: _cyanColor, width: 1.5),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 540),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.receipt_long, color: _cyanColor, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'HISTÓRICO FINANCEIRO',
+                                style: GoogleFonts.shareTechMono(
+                                  color: _cyanColor,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _isLeaderOrOfficer
+                            ? 'Registro de todas as doações e transferências de créditos da corporação.'
+                            : 'Registro das suas movimentações de créditos com a corporação.',
+                        style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(color: Colors.white12, height: 1),
+                      const SizedBox(height: 8),
+
+                      Expanded(
+                        child: loading
+                            ? const Center(child: CircularProgressIndicator(color: _cyanColor, strokeWidth: 2))
+                            : error != null
+                                ? Center(
+                                    child: Text(
+                                      error,
+                                      style: GoogleFonts.shareTechMono(color: _redAccent, fontSize: 11),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  )
+                                : transactions.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          'Nenhuma movimentação financeira registrada até o momento.',
+                                          style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 11),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: transactions.length,
+                                        separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                        itemBuilder: (context, idx) {
+                                          final t = transactions[idx];
+                                          final bool isToCorp = t['direction'] == 'TO_CORPORATION';
+                                          final num amountVal = (t['amount'] as num?) ?? 0;
+                                          final String pilotName = t['pilot_name'] ?? 'Piloto';
+                                          final String operatorName = t['operator_name'] ?? 'Operador';
+                                          final String dateStr = _formatDateTime(t['created_at']);
+                                          final Color badgeColor = isToCorp ? _greenAccent : _cyanColor;
+                                          final String directionLabel = isToCorp ? 'DOAÇÃO P/ CORP' : 'TRANSF. P/ MEMBRO';
+
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF12161F),
+                                              border: Border.all(color: Colors.white12),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(6),
+                                                  decoration: BoxDecoration(
+                                                    color: badgeColor.withOpacity(0.12),
+                                                    border: Border.all(color: badgeColor, width: 0.8),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Icon(
+                                                    isToCorp ? Icons.arrow_upward : Icons.arrow_downward,
+                                                    color: badgeColor,
+                                                    size: 16,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Text(
+                                                            '${_formatCredits(amountVal)} CR',
+                                                            style: GoogleFonts.shareTechMono(
+                                                              color: badgeColor,
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 6),
+                                                          Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                            decoration: BoxDecoration(
+                                                              color: badgeColor.withOpacity(0.15),
+                                                              borderRadius: BorderRadius.circular(2),
+                                                            ),
+                                                            child: Text(
+                                                              directionLabel,
+                                                              style: GoogleFonts.shareTechMono(
+                                                                color: badgeColor,
+                                                                fontSize: 8.5,
+                                                                fontWeight: FontWeight.bold,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        isToCorp ? 'Doador: $pilotName' : 'Destinatário: $pilotName',
+                                                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 10),
+                                                      ),
+                                                      if (operatorName != pilotName) ...[
+                                                        Text(
+                                                          'Por: $operatorName',
+                                                          style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+
+                                                Text(
+                                                  dateStr,
+                                                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFinanceManagementView({
+    required num corpCredits,
+    required bool isLeaderOrOfficer,
+  }) {
+    final memberName = _selectedMemberData?['pilot_name'] ??
+        _corpMembers.firstWhere(
+          (m) => m['pilot_uid']?.toString() == _selectedMemberPilotUid?.toString(),
+          orElse: () => {'pilot_name': 'VOCÊ'},
+        )['pilot_name'] ?? 'PILOTO';
+
+    final bool isOwnAccount = _selectedMemberPilotUid == null || _selectedMemberPilotUid == _pilotUid;
+
+    // Obtém equipe e cargo do membro selecionado
+    final selectedMemberInfo = _corpMembers.firstWhere(
+      (m) => m['pilot_uid']?.toString() == (_selectedMemberPilotUid ?? _pilotUid).toString(),
+      orElse: () => {},
+    );
+    final String memberRole = (selectedMemberInfo['role'] ?? (_selectedMemberPilotUid == null ? _corporationData?['role'] : 'member') ?? 'member').toString().toLowerCase();
+    final String memberRoleLabel = memberRole == 'leader' ? 'Líder' : (memberRole == 'officer' ? 'Oficial' : 'Membro');
+    final String memberTeam = selectedMemberInfo['team_name'] ?? 'Sem Equipe';
+
+    final text = _financeAmountController.text.replaceAll('.', '').trim();
+    final int enteredAmount = int.tryParse(text) ?? 0;
+
+    // Regras de Habilitação:
+    // "O botão PARA A CORPORAÇÃO só pode funcionar para o jogador"
+    final bool canDonateToCorp = !_isTransferringCredits &&
+        isOwnAccount &&
+        enteredAmount > 0 &&
+        enteredAmount <= _pilotCredits;
+
+    // "O botão PARA O MEMBRO só pode funcionar para o líder ou para os oficiais"
+    final bool canTransferToMember = !_isTransferringCredits &&
+        isLeaderOrOfficer &&
+        enteredAmount > 0 &&
+        enteredAmount <= corpCredits;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // =====================================================================
+        // 1. BOX SUPERIOR: SALDO DE CRÉDITOS DA CORPORAÇÃO
+        // =====================================================================
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: _panelBg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: _cyanColor.withOpacity(0.4)),
+            boxShadow: [
+              BoxShadow(color: _cyanColor.withOpacity(0.06), blurRadius: 8),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.account_balance, color: _cyanColor, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'SALDO DE CRÉDITOS DA CORPORAÇÃO',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              if (isLeaderOrOfficer) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      _formatCredits(corpCredits),
+                      style: GoogleFonts.shareTechMono(
+                        color: _greenAccent,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CR',
+                      style: GoogleFonts.shareTechMono(
+                        color: _greenAccent.withOpacity(0.8),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'DISPONÍVEL NO CAIXA DA CORPORAÇÃO',
+                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    const Icon(Icons.lock_outline, color: Colors.white38, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CONFIDENCIAL',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white38,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Acesso restrito ao comando da corporação (Líder e Oficiais).',
+                  style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 9.5),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // =====================================================================
+        // 2. BOX CENTRAL: BOTÕES E CONTROLES DE TRANSFERÊNCIA
+        // =====================================================================
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: _panelBg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: _cyanColor.withOpacity(0.4)),
+          ),
+          child: Row(
+            children: [
+              // Botão: [ PARA A CORPORAÇÃO ]
+              Expanded(
+                child: SizedBox(
+                  height: 32,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _cyanColor,
+                      disabledBackgroundColor: Colors.white12,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    onPressed: canDonateToCorp ? () => _handleTransferCredits('TO_CORPORATION') : null,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_upward_rounded,
+                            color: canDonateToCorp ? Colors.black : Colors.white24,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'PARA A CORPORAÇÃO',
+                            style: GoogleFonts.shareTechMono(
+                              color: canDonateToCorp ? Colors.black : Colors.white24,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 6),
+
+              // Campo de entrada de valor numérico
+              Expanded(
+                child: SizedBox(
+                  height: 32,
+                  child: TextField(
+                    controller: _financeAmountController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: 'DIGITE O VALOR...',
+                      hintStyle: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 9.5),
+                      filled: true,
+                      fillColor: const Color(0xFF0D121B),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: _cyanColor.withOpacity(0.6)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: _cyanColor.withOpacity(0.6)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: const BorderSide(color: _cyanColor, width: 1.4),
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 6),
+
+              // Botão: [ PARA O MEMBRO ]
+              Expanded(
+                child: SizedBox(
+                  height: 32,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _cyanColor,
+                      disabledBackgroundColor: Colors.white12,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    onPressed: canTransferToMember ? () => _handleTransferCredits('TO_MEMBER') : null,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_downward_rounded,
+                            color: canTransferToMember ? Colors.black : Colors.white24,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'PARA O MEMBRO',
+                            style: GoogleFonts.shareTechMono(
+                              color: canTransferToMember ? Colors.black : Colors.white24,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 6),
+
+              // Botão de Histórico Financeiro
+              SizedBox(
+                height: 32,
+                width: 32,
+                child: IconButton(
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D121B),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      side: BorderSide(color: _cyanColor.withOpacity(0.6)),
+                    ),
+                  ),
+                  icon: const Icon(Icons.receipt_long, color: _cyanColor, size: 16),
+                  tooltip: 'Histórico de Transações Financeiras',
+                  onPressed: _showCreditTransactionsModal,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // =====================================================================
+        // 3. BOX INFERIOR: SALDO DO MEMBRO SELECIONADO
+        // =====================================================================
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: _panelBg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: _cyanColor.withOpacity(0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'SALDO DE:',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+
+                  if (isLeaderOrOfficer) ...[
+                    InkWell(
+                      onTap: _showMemberSelectorDialog,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _cyanColor.withOpacity(0.12),
+                          border: Border.all(color: _cyanColor, width: 1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              memberName.toUpperCase(),
+                              style: GoogleFonts.shareTechMono(
+                                color: _cyanColor,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_drop_down, color: _cyanColor, size: 14),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        border: Border.all(color: Colors.white24, width: 1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        memberName.toUpperCase(),
+                        style: GoogleFonts.shareTechMono(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const Spacer(),
+
+                  Text(
+                    '$memberRoleLabel • $memberTeam',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              if (isOwnAccount) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      _formatCredits(_pilotCredits),
+                      style: GoogleFonts.shareTechMono(
+                        color: _greenAccent,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CR',
+                      style: GoogleFonts.shareTechMono(
+                        color: _greenAccent.withOpacity(0.8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'SEU SALDO PESSOAL DISPONÍVEL',
+                  style: GoogleFonts.shareTechMono(color: Colors.white38, fontSize: 9.5),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    const Icon(Icons.lock_outline, color: Colors.white38, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CONFIDENCIAL',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white38,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Saldo pessoal do membro protegido por sigilo financeiro.',
+                  style: GoogleFonts.shareTechMono(color: Colors.white30, fontSize: 9.5),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
