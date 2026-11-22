@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -45,6 +46,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
 
   // Lista de estações da tabela orbit_stations (com fallback inicial)
   List<String> _stationOptions = ['TODAS'];
+  List<Map<String, dynamic>> _stationList = [];
 
   // Estado de carregamento
   bool _isLoading = false;
@@ -104,6 +106,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
         if (mounted) {
           setState(() {
             _stationOptions = names;
+            _stationList = List<Map<String, dynamic>>.from(stations);
           });
         }
       } else {
@@ -272,8 +275,15 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           _availableContracts = List<Map<String, dynamic>>.from(avail);
           _activeContracts = List<Map<String, dynamic>>.from(act);
           _myCreatedContracts = List<Map<String, dynamic>>.from(crt);
-          // Inicia sempre como null para abrir na lista
-          _selectedContract = null;
+          if (_selectedContract != null) {
+            final dynamic selUid = _selectedContract!['contract_uid'];
+            final all = [...avail, ...act, ...crt];
+            final updated = all.cast<Map<String, dynamic>?>().firstWhere(
+              (c) => c != null && c['contract_uid'] == selUid,
+              orElse: () => null,
+            );
+            _selectedContract = updated != null ? Map<String, dynamic>.from(updated) : null;
+          }
           _isLoading = false;
         });
       } else {
@@ -574,35 +584,52 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     );
   }
 
-  void _executeAcceptContract(Map<String, dynamic> contract) {
-    setState(() {
-      _availableContracts.removeWhere(
-        (c) => c['contract_uid'] == contract['contract_uid'],
+  Future<void> _executeAcceptContract(Map<String, dynamic> contract) async {
+    final int pilotUid = _getPilotUid();
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/accept'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pilot_uid': pilotUid}),
       );
-      final Map<String, dynamic> newActive = Map<String, dynamic>.from(
-        contract,
-      );
-      newActive['status'] = 'active';
-      newActive['current_progress'] = 0;
-      newActive['target_progress'] = 1;
-      newActive['accepted_at'] = DateTime.now().toString();
-      _activeContracts.add(newActive);
-      _selectedContract = newActive;
-      _contractorSubTab = 'ATIVOS';
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: _greenAccent,
-        content: Text(
-          'Contrato aceito com sucesso! Verifique em "Meus Contratos Ativos".',
-          style: GoogleFonts.shareTechMono(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Contrato aceito com sucesso! Verifique em "Meus Contratos Ativos".',
+              style: GoogleFonts.shareTechMono(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
+        );
+        widget.onProfileRefresh?.call();
+        await _fetchContractsData();
+        setState(() {
+          _contractorSubTab = 'ATIVOS';
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Erro ao aceitar contrato',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Falha de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
         ),
-      ),
-    );
+      );
+    }
   }
 
   void _onAbandonContract(Map<String, dynamic> contract) {
@@ -638,7 +665,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
             ),
             content: Text(
               'Tem certeza que deseja abandonar a missão "${contract['title']}"?\n\n'
-              'Atenção: Quaisquer cauções depositadas poderão ser perdidas e haverá penalidade de reputação.',
+              'Atenção: Quaisquer cauções depositadas serão perdidas.',
               style: GoogleFonts.shareTechMono(
                 color: Colors.white70,
                 fontSize: 13,
@@ -656,25 +683,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                 style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
                 onPressed: () {
                   Navigator.pop(ctx);
-                  setState(() {
-                    _activeContracts.removeWhere(
-                      (c) => c['contract_uid'] == contract['contract_uid'],
-                    );
-                    final backToAvail = Map<String, dynamic>.from(contract);
-                    backToAvail['status'] = 'available';
-                    _availableContracts.add(backToAvail);
-                    _selectedContract = null; // Volta para a lista!
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      backgroundColor: _redAccent,
-                      content: Text(
-                        'Missão abandonada.',
-                        style: GoogleFonts.shareTechMono(color: Colors.white),
-                      ),
-                    ),
-                  );
+                  _executeAbandonContract(contract);
                 },
                 child: Text(
                   'CONFIRMAR ABANDONO',
@@ -686,6 +695,915 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               ),
             ],
           ),
+    );
+  }
+
+  Future<void> _executeAbandonContract(Map<String, dynamic> contract) async {
+    final int pilotUid = _getPilotUid();
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/abandon'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pilot_uid': pilotUid}),
+      );
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Missão abandonada.',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+        widget.onProfileRefresh?.call();
+        await _fetchContractsData();
+        setState(() {
+          _selectedContract = null;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Erro ao abandonar contrato',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Falha de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onDeliverContract(Map<String, dynamic> contract) async {
+    final int pilotUid = _getPilotUid();
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardBg,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _greenAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        title: Text(
+          'ENTREGAR / CONCLUIR MISSÃO',
+          style: GoogleFonts.shareTechMono(
+            color: _greenAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          'Deseja entregar e concluir a missão "${contract['title']}"?\n\n'
+          'Recompensa a receber: ${_formatCredits(contract['reward_credits'])} CR'
+          '${(contract['collateral_credits'] ?? 0) > 0 ? '\nDevolução da caução: ${_formatCredits(contract['collateral_credits'])} CR' : ''}\n'
+          'Reputação ganha: +${contract['reward_reputation'] ?? 0} REP',
+          style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _greenAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'CONFIRMAR ENTREGA',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/deliver'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pilot_uid': pilotUid}),
+      );
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Missão concluída com sucesso! Recompensa creditada na sua carteira.',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+        widget.onProfileRefresh?.call();
+        await _fetchContractsData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Erro ao entregar contrato',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Falha de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onCancelContract(Map<String, dynamic> contract) async {
+    final int pilotUid = _getPilotUid();
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardBg,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _redAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        title: Text(
+          'CANCELAR CONTRATO',
+          style: GoogleFonts.shareTechMono(
+            color: _redAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          'Deseja cancelar o contrato "${contract['title']}"?\n\n'
+          'A recompensa de ${_formatCredits(contract['reward_credits'])} CR será estornada para sua carteira.',
+          style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('VOLTAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'CONFIRMAR CANCELAMENTO',
+              style: GoogleFonts.shareTechMono(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/cancel'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'issuer_uid': pilotUid}),
+      );
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Contrato cancelado e créditos estornados!',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+        widget.onProfileRefresh?.call();
+        await _fetchContractsData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Erro ao cancelar contrato',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Falha de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onReactivateContract(Map<String, dynamic> contract) async {
+    final int pilotUid = _getPilotUid();
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardBg,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _greenAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        title: Text(
+          'REATIVAR CONTRATO',
+          style: GoogleFonts.shareTechMono(
+            color: _greenAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          'Deseja reativar a missão "${contract['title']}"?\n\n'
+          'Será debitada a recompensa de ${_formatCredits(contract['reward_credits'])} CR da sua carteira e o contrato voltará a ficar disponível para outros pilotos.',
+          style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _greenAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'REATIVAR MISSÃO',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/reactivate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'issuer_uid': pilotUid}),
+      );
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _greenAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Contrato reativado com sucesso!',
+              style: GoogleFonts.shareTechMono(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+        widget.onProfileRefresh?.call();
+        await _fetchContractsData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: _redAccent,
+            content: Text(
+              decoded['mensagem'] ?? 'Erro ao reativar contrato',
+              style: GoogleFonts.shareTechMono(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text('Falha de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  void _showContractFormModal({
+    Map<String, dynamic>? contractToEdit,
+    Map<String, dynamic>? contractToClone,
+  }) {
+    final bool isEditing = contractToEdit != null;
+    final bool isCloning = contractToClone != null;
+    final Map<String, dynamic>? baseContract = contractToEdit ?? contractToClone;
+
+    final TextEditingController titleCtrl = TextEditingController(
+      text: isCloning
+          ? '${baseContract?['title'] ?? ''} (Clone)'
+          : (baseContract?['title'] ?? ''),
+    );
+    final TextEditingController descCtrl = TextEditingController(
+      text: baseContract?['description'] ?? '',
+    );
+    final TextEditingController rewardCtrl = TextEditingController(
+      text: (baseContract?['reward_credits'] ?? 25000).toString(),
+    );
+    final TextEditingController repCtrl = TextEditingController(
+      text: (baseContract?['reward_reputation'] ?? 10).toString(),
+    );
+    final TextEditingController collatCtrl = TextEditingController(
+      text: (baseContract?['collateral_credits'] ?? 0).toString(),
+    );
+
+    String selectedCareer = baseContract?['target_career'] ?? 'general';
+    int selectedTier = (baseContract?['min_career_tier'] ?? 0) as int;
+    String selectedType = baseContract?['contract_type'] ?? 'bounty';
+    int selectedDuration = (baseContract?['duration_seconds'] ?? 86400) as int;
+    int? selectedOriginStationId = baseContract?['origin_station_id'];
+    int? selectedDestStationId = baseContract?['destination_station_id'];
+    bool isUncancellable = (baseContract?['uncancellable'] == 'y');
+    bool isSubmitting = false;
+
+    final List<Map<String, String>> careerOptions = [
+      {'val': 'general', 'label': 'GERAL'},
+      {'val': 'mercenary', 'label': 'MERCENÁRIO'},
+      {'val': 'extractor', 'label': 'EXTRATOR'},
+      {'val': 'merchant', 'label': 'COMERCIANTE'},
+      {'val': 'engineer', 'label': 'ENGENHEIRO'},
+      {'val': 'corporate', 'label': 'CORPORATIVO'},
+    ];
+
+    final List<Map<String, String>> typeOptions = [
+      {'val': 'bounty', 'label': 'BOUNTY HUNTER'},
+      {'val': 'courier', 'label': 'ENTREGA (COURIER)'},
+      {'val': 'mining', 'label': 'MINERAÇÃO'},
+      {'val': 'crafting', 'label': 'FABRICAÇÃO'},
+      {'val': 'corporate_emergency', 'label': 'EMERGÊNCIA CORP'},
+    ];
+
+    final List<Map<String, dynamic>> durationOptions = [
+      {'val': 3600, 'label': '1 HORA'},
+      {'val': 7200, 'label': '2 HORAS'},
+      {'val': 14400, 'label': '4 HORAS'},
+      {'val': 28800, 'label': '8 HORAS'},
+      {'val': 86400, 'label': '24 HORAS'},
+      {'val': 172800, 'label': '48 HORAS'},
+      {'val': 259200, 'label': '72 HORAS'},
+    ];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            String dialogTitle = 'CRIAR NOVO CONTRATO';
+            IconData titleIcon = Icons.post_add;
+            Color themeColor = _cyanColor;
+
+            if (isEditing) {
+              dialogTitle = 'EDITAR CONTRATO #${contractToEdit['contract_uid']}';
+              titleIcon = Icons.edit_note;
+              themeColor = _cyanColor;
+            } else if (isCloning) {
+              dialogTitle = 'CLONAR CONTRATO #${contractToClone['contract_uid']}';
+              titleIcon = Icons.copy;
+              themeColor = _amberAccent;
+            }
+
+            return Dialog(
+              backgroundColor: _cardBg,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: themeColor.withValues(alpha: 0.8), width: 1.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 620, maxHeight: 780),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(titleIcon, color: themeColor, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              dialogTitle,
+                              style: GoogleFonts.shareTechMono(
+                                color: themeColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12, height: 16),
+
+                    // Scrollable content
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Título
+                            _buildFormFieldLabel('TÍTULO DO CONTRATO / MISSÃO *'),
+                            TextField(
+                              controller: titleCtrl,
+                              maxLength: 60,
+                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 13),
+                              decoration: _buildInputDecoration('Ex: Escoltar Carga de Urânio em Kali-4'),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Descrição
+                            _buildFormFieldLabel('DESCRIÇÃO DOS OBJETIVOS *'),
+                            TextField(
+                              controller: descCtrl,
+                              maxLength: 255,
+                              maxLines: 3,
+                              style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                              decoration: _buildInputDecoration('Detalhes, condições e instruções para o contratado...'),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Carreira e Tier
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('CARREIRA ALVO'),
+                                      DropdownButtonFormField<String>(
+                                        value: selectedCareer,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                                        decoration: _buildInputDecoration(null),
+                                        items: careerOptions
+                                            .map((c) => DropdownMenuItem(
+                                                  value: c['val'],
+                                                  child: Text(c['label']!),
+                                                ))
+                                            .toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setDialogState(() => selectedCareer = val);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('TIER MÍNIMO'),
+                                      DropdownButtonFormField<int>(
+                                        value: selectedTier,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                                        decoration: _buildInputDecoration(null),
+                                        items: [0, 1, 2, 3, 4, 5]
+                                            .map((t) => DropdownMenuItem(
+                                                  value: t,
+                                                  child: Text('TIER $t'),
+                                                ))
+                                            .toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setDialogState(() => selectedTier = val);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Tipo e Duração
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('TIPO DE CONTRATO'),
+                                      DropdownButtonFormField<String>(
+                                        value: selectedType,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                                        decoration: _buildInputDecoration(null),
+                                        items: typeOptions
+                                            .map((t) => DropdownMenuItem(
+                                                  value: t['val'],
+                                                  child: Text(t['label']!),
+                                                ))
+                                            .toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setDialogState(() => selectedType = val);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('DURAÇÃO LIMITE'),
+                                      DropdownButtonFormField<int>(
+                                        value: selectedDuration,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
+                                        decoration: _buildInputDecoration(null),
+                                        items: durationOptions
+                                            .map((d) => DropdownMenuItem(
+                                                  value: d['val'] as int,
+                                                  child: Text(d['label'] as String),
+                                                ))
+                                            .toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setDialogState(() => selectedDuration = val);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Estação Origem e Destino
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('ESTAÇÃO ORIGEM'),
+                                      DropdownButtonFormField<int?>(
+                                        value: selectedOriginStationId,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                                        decoration: _buildInputDecoration(null),
+                                        items: [
+                                          const DropdownMenuItem<int?>(
+                                            value: null,
+                                            child: Text('QUALQUER / ESPAÇO'),
+                                          ),
+                                          ..._stationList.map((s) {
+                                            final int id = (s['id'] ?? s['station_id'] ?? 0) as int;
+                                            final String name = (s['name'] ?? s['station_name'] ?? 'Estação $id').toString();
+                                            return DropdownMenuItem<int?>(
+                                              value: id,
+                                              child: Text(name, overflow: TextOverflow.ellipsis),
+                                            );
+                                          }),
+                                        ],
+                                        onChanged: (val) => setDialogState(() => selectedOriginStationId = val),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('ESTAÇÃO DESTINO'),
+                                      DropdownButtonFormField<int?>(
+                                        value: selectedDestStationId,
+                                        dropdownColor: const Color(0xFF151922),
+                                        isDense: true,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
+                                        decoration: _buildInputDecoration(null),
+                                        items: [
+                                          const DropdownMenuItem<int?>(
+                                            value: null,
+                                            child: Text('QUALQUER / ESPAÇO'),
+                                          ),
+                                          ..._stationList.map((s) {
+                                            final int id = (s['id'] ?? s['station_id'] ?? 0) as int;
+                                            final String name = (s['name'] ?? s['station_name'] ?? 'Estação $id').toString();
+                                            return DropdownMenuItem<int?>(
+                                              value: id,
+                                              child: Text(name, overflow: TextOverflow.ellipsis),
+                                            );
+                                          }),
+                                        ],
+                                        onChanged: (val) => setDialogState(() => selectedDestStationId = val),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Recompensas e Caução
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('RECOMPENSA (CR) *'),
+                                      TextField(
+                                        controller: rewardCtrl,
+                                        keyboardType: TextInputType.number,
+                                        style: GoogleFonts.shareTechMono(
+                                          color: _greenAccent,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        decoration: _buildInputDecoration('Valor a pagar'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('REPUTAÇÃO (+REP)'),
+                                      TextField(
+                                        controller: repCtrl,
+                                        keyboardType: TextInputType.number,
+                                        style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 13),
+                                        decoration: _buildInputDecoration('Reputação'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildFormFieldLabel('CAUÇÃO (CR)'),
+                                      TextField(
+                                        controller: collatCtrl,
+                                        keyboardType: TextInputType.number,
+                                        style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
+                                        decoration: _buildInputDecoration('Depósito exigido'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            // Opção Não Cancelável
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              activeColor: _redAccent,
+                              title: Text(
+                                'CONTRATO NÃO CANCELÁVEL (SEM DESISTÊNCIA)',
+                                style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 11),
+                              ),
+                              value: isUncancellable,
+                              onChanged: (val) => setDialogState(() => isUncancellable = val ?? false),
+                            ),
+
+                            // Nota de custódia
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.black38,
+                                border: Border.all(color: Colors.white12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.info_outline, color: _cyanColor, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      isEditing
+                                          ? 'Ao atualizar, a diferença de recompensa será automaticamente ajustada em sua carteira.'
+                                          : 'A recompensa será retida da sua carteira na publicação e repassada ao piloto que cumprir o contrato.',
+                                      style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Divider(color: Colors.white12, height: 16),
+
+                    // Actions
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                          child: Text('CANCELAR', style: GoogleFonts.shareTechMono(color: Colors.white54)),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: themeColor,
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  final String title = titleCtrl.text.trim();
+                                  final String desc = descCtrl.text.trim();
+                                  if (title.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: _redAccent,
+                                        content: Text(
+                                          'Informe o título da missão!',
+                                          style: GoogleFonts.shareTechMono(color: Colors.white),
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  final num reward = num.tryParse(rewardCtrl.text.trim()) ?? 0;
+                                  final num rep = num.tryParse(repCtrl.text.trim()) ?? 0;
+                                  final num collat = num.tryParse(collatCtrl.text.trim()) ?? 0;
+                                  final int pilotUid = _getPilotUid();
+
+                                  setDialogState(() => isSubmitting = true);
+
+                                  try {
+                                    final Map<String, dynamic> bodyData = {
+                                      'issuer_type': 'pilot',
+                                      'issuer_uid': pilotUid,
+                                      'title': title,
+                                      'description': desc,
+                                      'target_career': selectedCareer,
+                                      'min_career_tier': selectedTier,
+                                      'contract_type': selectedType,
+                                      'origin_station_id': selectedOriginStationId,
+                                      'destination_station_id': selectedDestStationId,
+                                      'reward_credits': reward,
+                                      'reward_reputation': rep,
+                                      'collateral_credits': collat,
+                                      'duration_seconds': selectedDuration,
+                                      'uncancellable': isUncancellable ? 'y' : 'n',
+                                    };
+
+                                    http.Response res;
+                                    if (isEditing) {
+                                      res = await http.put(
+                                        Uri.parse('${widget.apiBaseUrl}/api/contracts/${contractToEdit['contract_uid']}'),
+                                        headers: {'Content-Type': 'application/json'},
+                                        body: jsonEncode(bodyData),
+                                      );
+                                    } else {
+                                      res = await http.post(
+                                        Uri.parse('${widget.apiBaseUrl}/api/contracts/create'),
+                                        headers: {'Content-Type': 'application/json'},
+                                        body: jsonEncode(bodyData),
+                                      );
+                                    }
+
+                                    final decoded = jsonDecode(res.body);
+                                    if (res.statusCode >= 200 && res.statusCode < 300 && decoded['status'] == 'sucesso') {
+                                      Navigator.of(ctx).pop();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          backgroundColor: _greenAccent,
+                                          content: Text(
+                                            decoded['mensagem'] ??
+                                                (isEditing
+                                                    ? 'Contrato atualizado com sucesso!'
+                                                    : 'Contrato publicado no quadro de missões!'),
+                                            style: GoogleFonts.shareTechMono(
+                                              color: Colors.black,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                      widget.onProfileRefresh?.call();
+                                      await _fetchContractsData();
+                                    } else {
+                                      setDialogState(() => isSubmitting = false);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          backgroundColor: _redAccent,
+                                          content: Text(
+                                            decoded['mensagem'] ?? 'Erro ao salvar contrato',
+                                            style: GoogleFonts.shareTechMono(color: Colors.white),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    setDialogState(() => isSubmitting = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: _redAccent,
+                                        content: Text('Erro de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                )
+                              : Text(
+                                  isEditing
+                                      ? 'SALVAR ALTERAÇÕES'
+                                      : (isCloning ? 'PUBLICAR CLONE' : 'PUBLICAR CONTRATO'),
+                                  style: GoogleFonts.shareTechMono(
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFormFieldLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text,
+        style: GoogleFonts.shareTechMono(
+          color: _cyanColor,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _buildInputDecoration(String? hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: GoogleFonts.shareTechMono(color: Colors.white24, fontSize: 11),
+      filled: true,
+      fillColor: const Color(0xFF151922),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: Colors.white24),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: Colors.white24),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: _cyanColor),
+      ),
     );
   }
 
@@ -1243,20 +2161,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: _cyanColor,
-                            content: Text(
-                              'Formulário de Criação de Contratos será configurado na Parte 2!',
-                              style: GoogleFonts.shareTechMono(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      onPressed: () => _showContractFormModal(),
                       icon: const Icon(Icons.add, color: _cyanColor, size: 16),
                       label: Text(
                         'CRIAR NOVO CONTRATO',
@@ -1818,33 +2723,68 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   ) {
     if (_mainMode == 'CONTRATADO') {
       if (isActive) {
-        // Botão para Abandonar Missão Ativa
-        return SizedBox(
-          width: double.infinity,
-          height: 42,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _redAccent.withValues(alpha: 0.2),
-              side: const BorderSide(color: _redAccent, width: 1.2),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
+        // Botões para Contrato Ativo: ENTREGAR e ABANDONAR
+        return Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: SizedBox(
+                height: 42,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _greenAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  onPressed: () => _onDeliverContract(contract),
+                  icon: const Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.black,
+                    size: 18,
+                  ),
+                  label: Text(
+                    'ENTREGAR CONTRATO',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
               ),
             ),
-            onPressed: () => _onAbandonContract(contract),
-            icon: const Icon(
-              Icons.cancel_outlined,
-              color: _redAccent,
-              size: 18,
-            ),
-            label: Text(
-              'ABANDONAR MISSÃO ATIVA',
-              style: GoogleFonts.shareTechMono(
-                color: _redAccent,
-                fontWeight: FontWeight.bold,
-                fontSize: 12.5,
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 42,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _redAccent, width: 1.2),
+                    backgroundColor: _redAccent.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  onPressed: () => _onAbandonContract(contract),
+                  icon: const Icon(
+                    Icons.cancel_outlined,
+                    color: _redAccent,
+                    size: 16,
+                  ),
+                  label: Text(
+                    'ABANDONAR',
+                    style: GoogleFonts.shareTechMono(
+                      color: _redAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         );
       } else {
         // Botão para Aceitar Contrato
@@ -1877,71 +2817,139 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       }
     } else {
       // Ações do Contratante para contratos criados
-      return Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _cyanColor),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: _cyanColor,
-                    content: Text(
-                      'Edição do contrato configurada na Parte 2!',
-                      style: GoogleFonts.shareTechMono(color: Colors.black),
+      final String status = (contract['status'] ?? 'available').toString().toLowerCase();
+      final bool isAvailable = status == 'available';
+
+      if (isAvailable) {
+        return Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _cyanColor),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                );
-              },
-              child: Text(
-                'EDITAR CONTRATO',
-                style: GoogleFonts.shareTechMono(
-                  color: _cyanColor,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
+                  onPressed: () => _showContractFormModal(contractToEdit: contract),
+                  icon: const Icon(Icons.edit_note, color: _cyanColor, size: 16),
+                  label: Text(
+                    'EDITAR',
+                    style: GoogleFonts.shareTechMono(
+                      color: _cyanColor,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _redAccent),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: _redAccent,
-                    content: Text(
-                      'Cancelamento/Exclusão configurado na Parte 2!',
-                      style: GoogleFonts.shareTechMono(color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _amberAccent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                );
-              },
-              child: Text(
-                'CANCELAR CONTRATO',
-                style: GoogleFonts.shareTechMono(
-                  color: _redAccent,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
+                  onPressed: () => _showContractFormModal(contractToClone: contract),
+                  icon: const Icon(Icons.copy, color: _amberAccent, size: 16),
+                  label: Text(
+                    'CLONAR',
+                    style: GoogleFonts.shareTechMono(
+                      color: _amberAccent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-      );
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _redAccent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  onPressed: () => _onCancelContract(contract),
+                  icon: const Icon(Icons.cancel_outlined, color: _redAccent, size: 16),
+                  label: Text(
+                    'CANCELAR',
+                    style: GoogleFonts.shareTechMono(
+                      color: _redAccent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      } else {
+        return Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _greenAccent),
+                    backgroundColor: _greenAccent.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  onPressed: () => _onReactivateContract(contract),
+                  icon: const Icon(Icons.refresh, color: _greenAccent, size: 16),
+                  label: Text(
+                    'REATIVAR CONTRATO',
+                    style: GoogleFonts.shareTechMono(
+                      color: _greenAccent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _amberAccent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  onPressed: () => _showContractFormModal(contractToClone: contract),
+                  icon: const Icon(Icons.copy, color: _amberAccent, size: 16),
+                  label: Text(
+                    'CLONAR',
+                    style: GoogleFonts.shareTechMono(
+                      color: _amberAccent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      }
     }
   }
 }
