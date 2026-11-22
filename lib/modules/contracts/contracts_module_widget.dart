@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,6 +42,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   String _filterCareer = 'TODAS';
   String _filterType = 'TODOS';
   String _filterStation = 'TODAS';
+  String _filterStatus = 'TODAS';
   final TextEditingController _searchController = TextEditingController();
   bool _showFiltersBar = false;
 
@@ -457,11 +459,30 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     });
   }
 
+  static const List<String> _statusSortOrder = [
+    'available',
+    'in_progress',
+    'completed',
+    'failed',
+    'cancelled',
+  ];
+
+  int _getStatusOrder(dynamic status) {
+    final idx = _statusSortOrder.indexOf((status ?? '').toString().toLowerCase());
+    return idx == -1 ? _statusSortOrder.length : idx;
+  }
+
   // Filtragem local dos contratos
   List<Map<String, dynamic>> _getFilteredContracts(
     List<Map<String, dynamic>> list,
   ) {
-    return list.where((contract) {
+    final filtered = list.where((contract) {
+      if (_mainMode == 'CONTRATANTE' && _filterStatus != 'TODAS') {
+        if ((contract['status'] ?? '').toString().toLowerCase() !=
+            _filterStatus.toLowerCase()) {
+          return false;
+        }
+      }
       if (_filterCareer != 'TODAS') {
         if (contract['target_career']?.toString().toLowerCase() !=
             _filterCareer.toLowerCase()) {
@@ -499,17 +520,40 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
         final issuer = (contract['issuer_name'] ?? '').toString().toLowerCase();
         final item =
             (contract['target_item_name'] ?? '').toString().toLowerCase();
+        final targetPilot =
+            (contract['target_pilot_name'] ?? '').toString().toLowerCase();
+        final targetCorp =
+            (contract['target_corporation_name'] ?? '').toString().toLowerCase();
         if (!title.contains(search) &&
             !desc.contains(search) &&
             !orig.contains(search) &&
             !dest.contains(search) &&
             !issuer.contains(search) &&
-            !item.contains(search)) {
+            !item.contains(search) &&
+            !targetPilot.contains(search) &&
+            !targetCorp.contains(search)) {
           return false;
         }
       }
       return true;
     }).toList();
+
+    if (_mainMode == 'CONTRATANTE') {
+      filtered.sort((a, b) {
+        final statusCmp =
+            _getStatusOrder(a['status']).compareTo(_getStatusOrder(b['status']));
+        if (statusCmp != 0) return statusCmp;
+        final int uidA = (a['contract_uid'] is num)
+            ? (a['contract_uid'] as num).toInt()
+            : int.tryParse(a['contract_uid']?.toString() ?? '') ?? 0;
+        final int uidB = (b['contract_uid'] is num)
+            ? (b['contract_uid'] as num).toInt()
+            : int.tryParse(b['contract_uid']?.toString() ?? '') ?? 0;
+        return uidB.compareTo(uidA);
+      });
+    }
+
+    return filtered;
   }
 
   void _onAcceptContract(Map<String, dynamic> contract) {
@@ -765,7 +809,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
           'Deseja entregar e concluir a missão "${contract['title']}"?\n\n'
           'Recompensa a receber: ${_formatCredits(contract['reward_credits'])} CR'
           '${(contract['collateral_credits'] ?? 0) > 0 ? '\nDevolução da caução: ${_formatCredits(contract['collateral_credits'])} CR' : ''}\n'
-          'Reputação ganha: +${contract['reward_reputation'] ?? 0} REP',
+          'Reputação ganha: +${contract['reward_reputation'] ?? 1}%',
           style: GoogleFonts.shareTechMono(color: Colors.white70, fontSize: 13),
         ),
         actions: [
@@ -873,7 +917,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       final res = await http.post(
         Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/cancel'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'issuer_uid': pilotUid}),
+        body: jsonEncode({'pilot_uid': pilotUid, 'issuer_uid': pilotUid}),
       );
       final decoded = jsonDecode(res.body);
       if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
@@ -955,7 +999,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       final res = await http.post(
         Uri.parse('${widget.apiBaseUrl}/api/contracts/${contract['contract_uid']}/reactivate'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'issuer_uid': pilotUid}),
+        body: jsonEncode({'pilot_uid': pilotUid, 'issuer_uid': pilotUid}),
       );
       final decoded = jsonDecode(res.body);
       if (res.statusCode == 200 && decoded['status'] == 'sucesso') {
@@ -991,6 +1035,288 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _searchPilotsApi(String query) async {
+    try {
+      final uri = Uri.parse(
+        '${widget.apiBaseUrl}/api/contracts/search/pilots?q=${Uri.encodeQueryComponent(query)}',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded['pilots'] ?? [];
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (e) {
+      debugPrint('[CONTRATOS] Erro ao pesquisar pilotos: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> _searchCorporationsApi(String query) async {
+    try {
+      final uri = Uri.parse(
+        '${widget.apiBaseUrl}/api/contracts/search/corporations?q=${Uri.encodeQueryComponent(query)}',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded['corporations'] ?? [];
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (e) {
+      debugPrint('[CONTRATOS] Erro ao pesquisar corporações: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> _searchItemsApi(
+    String mode,
+    String query,
+  ) async {
+    try {
+      final uri = Uri.parse(
+        '${widget.apiBaseUrl}/api/contracts/search/items?mode=$mode&q=${Uri.encodeQueryComponent(query)}',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final List list = decoded['items'] ?? [];
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (e) {
+      debugPrint('[CONTRATOS] Erro ao pesquisar itens ($mode): $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> _showSearchPickerDialog({
+    required String title,
+    required String hint,
+    required Color accentColor,
+    required IconData itemIcon,
+    required Future<List<Map<String, dynamic>>> Function(String query) fetcher,
+    required String Function(Map<String, dynamic> item) titleBuilder,
+    required String Function(Map<String, dynamic> item) subtitleBuilder,
+  }) async {
+    final TextEditingController queryCtrl = TextEditingController();
+    List<Map<String, dynamic>> results = [];
+    bool loading = true;
+    bool initialized = false;
+    bool closed = false;
+    Timer? debounce;
+
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (pickerCtx) {
+        return StatefulBuilder(
+          builder: (sCtx, setPickerState) {
+            Future<void> runSearch(String q) async {
+              if (closed) return;
+              setPickerState(() => loading = true);
+              final list = await fetcher(q.trim());
+              if (!closed) {
+                setPickerState(() {
+                  results = list;
+                  loading = false;
+                });
+              }
+            }
+
+            if (!initialized) {
+              initialized = true;
+              Future.microtask(() => runSearch(''));
+            }
+
+            return Dialog(
+              backgroundColor: _cardBg,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: accentColor.withValues(alpha: 0.8), width: 1.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.search, color: accentColor, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              title,
+                              style: GoogleFonts.shareTechMono(
+                                color: accentColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                          onPressed: () {
+                            closed = true;
+                            debounce?.cancel();
+                            Navigator.of(pickerCtx).pop();
+                          },
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: queryCtrl,
+                      autofocus: true,
+                      style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12.5),
+                      decoration: _buildInputDecoration(hint).copyWith(
+                        prefixIcon: Icon(Icons.search, color: accentColor, size: 16),
+                      ),
+                      onChanged: (val) {
+                        debounce?.cancel();
+                        debounce = Timer(const Duration(milliseconds: 250), () {
+                          runSearch(val);
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: loading
+                          ? Center(
+                              child: CircularProgressIndicator(
+                                color: accentColor,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : results.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'Nenhum resultado encontrado.',
+                                    style: GoogleFonts.shareTechMono(
+                                      color: Colors.white38,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: results.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(color: Colors.white10, height: 1),
+                                  itemBuilder: (_, idx) {
+                                    final item = results[idx];
+                                    final sub = subtitleBuilder(item);
+                                    return ListTile(
+                                      dense: true,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      leading: Icon(
+                                        itemIcon,
+                                        color: accentColor,
+                                        size: 18,
+                                      ),
+                                      title: Text(
+                                        titleBuilder(item),
+                                        style: GoogleFonts.shareTechMono(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      subtitle: sub.isNotEmpty
+                                          ? Text(
+                                              sub,
+                                              style: GoogleFonts.shareTechMono(
+                                                color: Colors.white54,
+                                                fontSize: 10.5,
+                                              ),
+                                            )
+                                          : null,
+                                      onTap: () {
+                                        closed = true;
+                                        debounce?.cancel();
+                                        Navigator.of(pickerCtx).pop(item);
+                                      },
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    debounce?.cancel();
+    queryCtrl.dispose();
+    return selected;
+  }
+
+  Widget _buildSearchSelectorField({
+    required String? selectedLabel,
+    required String placeholder,
+    required Color accentColor,
+    required IconData icon,
+    required VoidCallback onTap,
+    VoidCallback? onClear,
+  }) {
+    final bool hasValue = selectedLabel != null && selectedLabel.isNotEmpty;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF151922),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: hasValue ? accentColor.withValues(alpha: 0.7) : Colors.white24,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: hasValue ? accentColor : Colors.white38,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasValue ? selectedLabel : placeholder,
+                style: GoogleFonts.shareTechMono(
+                  color: hasValue ? Colors.white : Colors.white30,
+                  fontSize: 12,
+                  fontWeight: hasValue ? FontWeight.bold : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (hasValue && onClear != null)
+              GestureDetector(
+                onTap: onClear,
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Icon(Icons.close, size: 15, color: Colors.white54),
+                ),
+              )
+            else
+              Icon(Icons.search, size: 16, color: accentColor.withValues(alpha: 0.8)),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showContractFormModal({
     Map<String, dynamic>? contractToEdit,
     Map<String, dynamic>? contractToClone,
@@ -1010,19 +1336,39 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     final TextEditingController rewardCtrl = TextEditingController(
       text: (baseContract?['reward_credits'] ?? 25000).toString(),
     );
-    final TextEditingController repCtrl = TextEditingController(
-      text: (baseContract?['reward_reputation'] ?? 10).toString(),
-    );
     final TextEditingController collatCtrl = TextEditingController(
       text: (baseContract?['collateral_credits'] ?? 0).toString(),
+    );
+    final TextEditingController amountCtrl = TextEditingController(
+      text: (baseContract?['target_amount'] ?? 1).toString(),
     );
 
     String selectedCareer = baseContract?['target_career'] ?? 'general';
     int selectedTier = (baseContract?['min_career_tier'] ?? 0) as int;
     String selectedType = baseContract?['contract_type'] ?? 'bounty';
     int selectedDuration = (baseContract?['duration_seconds'] ?? 86400) as int;
-    int? selectedOriginStationId = baseContract?['origin_station_id'];
-    int? selectedDestStationId = baseContract?['destination_station_id'];
+    int? selectedOriginStationId = baseContract?['origin_station_id'] is num
+        ? (baseContract!['origin_station_id'] as num).toInt()
+        : int.tryParse(baseContract?['origin_station_id']?.toString() ?? '');
+    int? selectedDestStationId = baseContract?['destination_station_id'] is num
+        ? (baseContract!['destination_station_id'] as num).toInt()
+        : int.tryParse(baseContract?['destination_station_id']?.toString() ?? '');
+
+    int? selectedTargetPilotUid = baseContract?['target_pilot_uid'] is num
+        ? (baseContract!['target_pilot_uid'] as num).toInt()
+        : int.tryParse(baseContract?['target_pilot_uid']?.toString() ?? '');
+    String? selectedTargetPilotName = baseContract?['target_pilot_name']?.toString();
+
+    int? selectedTargetCorpUid = baseContract?['target_corporation_uid'] is num
+        ? (baseContract!['target_corporation_uid'] as num).toInt()
+        : int.tryParse(baseContract?['target_corporation_uid']?.toString() ?? '');
+    String? selectedTargetCorpName = baseContract?['target_corporation_name']?.toString();
+
+    int? selectedItemCode = baseContract?['target_item_code'] is num
+        ? (baseContract!['target_item_code'] as num).toInt()
+        : int.tryParse(baseContract?['target_item_code']?.toString() ?? '');
+    String? selectedItemName = baseContract?['target_item_name']?.toString();
+
     bool isUncancellable = (baseContract?['uncancellable'] == 'y');
     bool isSubmitting = false;
 
@@ -1053,6 +1399,18 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       {'val': 259200, 'label': '72 HORAS'},
     ];
 
+    void showFormError(String msg) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: _redAccent,
+          content: Text(
+            msg,
+            style: GoogleFonts.shareTechMono(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1072,6 +1430,41 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
               titleIcon = Icons.copy;
               themeColor = _amberAccent;
             }
+
+            final bool isBounty = selectedType == 'bounty';
+            final bool isCourier = selectedType == 'courier';
+            final bool isMining = selectedType == 'mining';
+            final bool isCrafting = selectedType == 'crafting';
+            final bool isCorpEmergency = selectedType == 'corporate_emergency';
+
+            // Lista de estações disponíveis para Origem (apenas 'fabrica' em Fabricação)
+            final List<Map<String, dynamic>> originStations = isCrafting
+                ? _stationList
+                    .where(
+                      (s) =>
+                          (s['station_type'] ?? '').toString().toLowerCase() ==
+                          'fabrica',
+                    )
+                    .toList()
+                : _stationList;
+
+            final Set<int> validOriginIds = originStations
+                .map((s) => (s['id'] ?? s['station_id'] ?? 0) as int)
+                .toSet();
+            final Set<int> validDestIds = _stationList
+                .map((s) => (s['id'] ?? s['station_id'] ?? 0) as int)
+                .toSet();
+
+            final int? safeOriginValue =
+                (selectedOriginStationId != null &&
+                        validOriginIds.contains(selectedOriginStationId))
+                    ? selectedOriginStationId
+                    : null;
+            final int? safeDestValue =
+                (selectedDestStationId != null &&
+                        validDestIds.contains(selectedDestStationId))
+                    ? selectedDestStationId
+                    : null;
 
             return Dialog(
               backgroundColor: _cardBg,
@@ -1154,6 +1547,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                         value: selectedCareer,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
                                         decoration: _buildInputDecoration(null),
                                         items: careerOptions
@@ -1180,6 +1574,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                         value: selectedTier,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
                                         decoration: _buildInputDecoration(null),
                                         items: [0, 1, 2, 3, 4, 5]
@@ -1207,11 +1602,12 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildFormFieldLabel('TIPO DE CONTRATO'),
+                                      _buildFormFieldLabel('TIPO DE CONTRATO *'),
                                       DropdownButtonFormField<String>(
                                         value: selectedType,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
                                         decoration: _buildInputDecoration(null),
                                         items: typeOptions
@@ -1221,7 +1617,37 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                                 ))
                                             .toList(),
                                         onChanged: (val) {
-                                          if (val != null) setDialogState(() => selectedType = val);
+                                          if (val == null || val == selectedType) return;
+                                          setDialogState(() {
+                                            selectedType = val;
+                                            // Limpa campos incompatíveis com o novo tipo
+                                            if (val != 'bounty') {
+                                              selectedTargetPilotUid = null;
+                                              selectedTargetPilotName = null;
+                                            }
+                                            if (val != 'corporate_emergency') {
+                                              selectedTargetCorpUid = null;
+                                              selectedTargetCorpName = null;
+                                            }
+                                            if (val != 'mining' && val != 'crafting') {
+                                              selectedItemCode = null;
+                                              selectedItemName = null;
+                                            } else {
+                                              // Troca entre mining e crafting: reseta item para evitar tipo incompatível
+                                              selectedItemCode = null;
+                                              selectedItemName = null;
+                                            }
+                                            if (val == 'crafting' && selectedOriginStationId != null) {
+                                              final orig = _stationList.cast<Map<String, dynamic>?>().firstWhere(
+                                                (s) => s != null && (s['id'] ?? s['station_id']) == selectedOriginStationId,
+                                                orElse: () => null,
+                                              );
+                                              if (orig == null ||
+                                                  (orig['station_type'] ?? '').toString().toLowerCase() != 'fabrica') {
+                                                selectedOriginStationId = null;
+                                              }
+                                            }
+                                          });
                                         },
                                       ),
                                     ],
@@ -1238,6 +1664,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                         value: selectedDuration,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 12),
                                         decoration: _buildInputDecoration(null),
                                         items: durationOptions
@@ -1257,6 +1684,199 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                             ),
                             const SizedBox(height: 12),
 
+                            // Campos dinâmicos por Tipo de Contrato
+                            if (isBounty) ...[
+                              _buildFormFieldLabel('JOGADOR ALVO (BOUNTY) *'),
+                              _buildSearchSelectorField(
+                                selectedLabel: selectedTargetPilotName,
+                                placeholder: 'Pesquisar jogador alvo pelo nome...',
+                                accentColor: _redAccent,
+                                icon: Icons.gps_fixed,
+                                onTap: () async {
+                                  final picked = await _showSearchPickerDialog(
+                                    title: 'SELECIONAR JOGADOR ALVO',
+                                    hint: 'Digite parte do nome do piloto...',
+                                    accentColor: _redAccent,
+                                    itemIcon: Icons.person_search,
+                                    fetcher: _searchPilotsApi,
+                                    titleBuilder: (p) => (p['pilot'] ?? '').toString(),
+                                    subtitleBuilder: (p) =>
+                                        'Corporação: ${p['corporation_name'] ?? 'Freelancer'} · UID ${p['pilot_uid']}',
+                                  );
+                                  if (picked != null) {
+                                    setDialogState(() {
+                                      selectedTargetPilotUid = (picked['pilot_uid'] as num).toInt();
+                                      selectedTargetPilotName = (picked['pilot'] ?? '').toString();
+                                    });
+                                  }
+                                },
+                                onClear: () {
+                                  setDialogState(() {
+                                    selectedTargetPilotUid = null;
+                                    selectedTargetPilotName = null;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
+                            if (isMining || isCrafting) ...[
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _buildFormFieldLabel(
+                                          isMining
+                                              ? 'ITEM ALVO (ORE / CRYSTAL) *'
+                                              : 'ITEM PARA FABRICAÇÃO *',
+                                        ),
+                                        _buildSearchSelectorField(
+                                          selectedLabel: selectedItemName,
+                                          placeholder: isMining
+                                              ? 'Pesquisar minério ou cristal...'
+                                              : 'Pesquisar item fabricável...',
+                                          accentColor: isMining ? _amberAccent : _cyanColor,
+                                          icon: isMining
+                                              ? Icons.diamond_outlined
+                                              : Icons.precision_manufacturing_outlined,
+                                          onTap: () async {
+                                            final picked = await _showSearchPickerDialog(
+                                              title: isMining
+                                                  ? 'SELECIONAR MINÉRIO / CRISTAL'
+                                                  : 'SELECIONAR ITEM FABRICÁVEL',
+                                              hint: 'Digite parte do nome do item...',
+                                              accentColor: isMining ? _amberAccent : _cyanColor,
+                                              itemIcon: isMining
+                                                  ? Icons.diamond_outlined
+                                                  : Icons.build_circle_outlined,
+                                              fetcher: (q) => _searchItemsApi(
+                                                isMining ? 'mining' : 'crafting',
+                                                q,
+                                              ),
+                                              titleBuilder: (it) => (it['name'] ?? '').toString(),
+                                              subtitleBuilder: (it) {
+                                                final grp = (it['group_name'] ?? '').toString();
+                                                return grp.isNotEmpty
+                                                    ? 'Grupo: $grp · Código ${it['item_code']}'
+                                                    : 'Código ${it['item_code']}';
+                                              },
+                                            );
+                                            if (picked != null) {
+                                              setDialogState(() {
+                                                selectedItemCode = (picked['item_code'] as num).toInt();
+                                                selectedItemName = (picked['name'] ?? '').toString();
+                                              });
+                                            }
+                                          },
+                                          onClear: () {
+                                            setDialogState(() {
+                                              selectedItemCode = null;
+                                              selectedItemName = null;
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _buildFormFieldLabel('QUANTIDADE *'),
+                                        TextField(
+                                          controller: amountCtrl,
+                                          keyboardType: TextInputType.number,
+                                          style: GoogleFonts.shareTechMono(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          decoration: _buildInputDecoration('Ex: 100'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
+                            if (isCorpEmergency) ...[
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _buildFormFieldLabel('CORPORAÇÃO ALVO *'),
+                                        _buildSearchSelectorField(
+                                          selectedLabel: selectedTargetCorpName,
+                                          placeholder: 'Pesquisar corporação alvo...',
+                                          accentColor: _purpleAccent,
+                                          icon: Icons.corporate_fare,
+                                          onTap: () async {
+                                            final picked = await _showSearchPickerDialog(
+                                              title: 'SELECIONAR CORPORAÇÃO ALVO',
+                                              hint: 'Digite parte do nome da corporação...',
+                                              accentColor: _purpleAccent,
+                                              itemIcon: Icons.corporate_fare,
+                                              fetcher: _searchCorporationsApi,
+                                              titleBuilder: (c) => (c['name'] ?? '').toString(),
+                                              subtitleBuilder: (c) =>
+                                                  'Membros: ${c['member_count'] ?? 0} · UID ${c['corporation_uid']}',
+                                            );
+                                            if (picked != null) {
+                                              setDialogState(() {
+                                                selectedTargetCorpUid =
+                                                    (picked['corporation_uid'] as num).toInt();
+                                                selectedTargetCorpName =
+                                                    (picked['name'] ?? '').toString();
+                                              });
+                                            }
+                                          },
+                                          onClear: () {
+                                            setDialogState(() {
+                                              selectedTargetCorpUid = null;
+                                              selectedTargetCorpName = null;
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _buildFormFieldLabel('PILOTOS ABATIDOS *'),
+                                        TextField(
+                                          controller: amountCtrl,
+                                          keyboardType: TextInputType.number,
+                                          style: GoogleFonts.shareTechMono(
+                                            color: _redAccent,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          decoration: _buildInputDecoration('Qtd abates'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
                             // Estação Origem e Destino
                             Row(
                               children: [
@@ -1264,19 +1884,37 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildFormFieldLabel('ESTAÇÃO ORIGEM'),
+                                      _buildFormFieldLabel(
+                                        isCrafting
+                                            ? 'ESTAÇÃO ORIGEM (FÁBRICA) *'
+                                            : (isCourier ? 'ESTAÇÃO ORIGEM *' : 'ESTAÇÃO ORIGEM'),
+                                      ),
                                       DropdownButtonFormField<int?>(
-                                        value: selectedOriginStationId,
+                                        value: safeOriginValue,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
                                         decoration: _buildInputDecoration(null),
                                         items: [
-                                          const DropdownMenuItem<int?>(
+                                          DropdownMenuItem<int?>(
                                             value: null,
-                                            child: Text('QUALQUER / ESPAÇO'),
+                                            child: Text(
+                                              isCrafting
+                                                  ? 'SELECIONE FÁBRICA...'
+                                                  : (isCourier
+                                                      ? 'SELECIONE ORIGEM...'
+                                                      : 'QUALQUER / ESPAÇO'),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.shareTechMono(
+                                                color: (isCrafting || isCourier)
+                                                    ? Colors.white38
+                                                    : Colors.white,
+                                                fontSize: 11,
+                                              ),
+                                            ),
                                           ),
-                                          ..._stationList.map((s) {
+                                          ...originStations.map((s) {
                                             final int id = (s['id'] ?? s['station_id'] ?? 0) as int;
                                             final String name = (s['name'] ?? s['station_name'] ?? 'Estação $id').toString();
                                             return DropdownMenuItem<int?>(
@@ -1295,17 +1933,33 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildFormFieldLabel('ESTAÇÃO DESTINO'),
+                                      _buildFormFieldLabel(
+                                        (isCourier || isCrafting)
+                                            ? 'ESTAÇÃO DESTINO *'
+                                            : 'ESTAÇÃO DESTINO',
+                                      ),
                                       DropdownButtonFormField<int?>(
-                                        value: selectedDestStationId,
+                                        value: safeDestValue,
                                         dropdownColor: const Color(0xFF151922),
                                         isDense: true,
+                                        isExpanded: true,
                                         style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 11),
                                         decoration: _buildInputDecoration(null),
                                         items: [
-                                          const DropdownMenuItem<int?>(
+                                          DropdownMenuItem<int?>(
                                             value: null,
-                                            child: Text('QUALQUER / ESPAÇO'),
+                                            child: Text(
+                                              (isCourier || isCrafting)
+                                                  ? 'SELECIONE DESTINO...'
+                                                  : 'QUALQUER / ESPAÇO',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.shareTechMono(
+                                                color: (isCourier || isCrafting)
+                                                    ? Colors.white38
+                                                    : Colors.white,
+                                                fontSize: 11,
+                                              ),
+                                            ),
                                           ),
                                           ..._stationList.map((s) {
                                             final int id = (s['id'] ?? s['station_id'] ?? 0) as int;
@@ -1353,12 +2007,28 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildFormFieldLabel('REPUTAÇÃO (+REP)'),
-                                      TextField(
-                                        controller: repCtrl,
-                                        keyboardType: TextInputType.number,
-                                        style: GoogleFonts.shareTechMono(color: _amberAccent, fontSize: 13),
-                                        decoration: _buildInputDecoration('Reputação'),
+                                      _buildFormFieldLabel('REPUTAÇÃO'),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black26,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: _amberAccent.withValues(alpha: 0.4),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '+1%',
+                                          style: GoogleFonts.shareTechMono(
+                                            color: _amberAccent,
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1396,7 +2066,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                               onChanged: (val) => setDialogState(() => isUncancellable = val ?? false),
                             ),
 
-                            // Nota de custódia
+                            // Nota de custódia e reputação
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
@@ -1412,8 +2082,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                   Expanded(
                                     child: Text(
                                       isEditing
-                                          ? 'Ao atualizar, a diferença de recompensa será automaticamente ajustada em sua carteira.'
-                                          : 'A recompensa será retida da sua carteira na publicação e repassada ao piloto que cumprir o contrato.',
+                                          ? 'Ao atualizar, a diferença de recompensa será ajustada em sua carteira. A reputação é fixa em +1% (efeito na habilidade calculado na finalização).'
+                                          : 'A recompensa será retida da sua carteira na publicação. A reputação é fixa em +1% para todas as missões (efeito na habilidade calculado na finalização).',
                                       style: GoogleFonts.shareTechMono(color: Colors.white54, fontSize: 10),
                                     ),
                                   ),
@@ -1446,28 +2116,81 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                               : () async {
                                   final String title = titleCtrl.text.trim();
                                   final String desc = descCtrl.text.trim();
-                                  if (title.isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        backgroundColor: _redAccent,
-                                        content: Text(
-                                          'Informe o título da missão!',
-                                          style: GoogleFonts.shareTechMono(color: Colors.white),
-                                        ),
-                                      ),
-                                    );
+                                  if (title.length < 3) {
+                                    showFormError('O título da missão deve ter pelo menos 3 caracteres!');
+                                    return;
+                                  }
+                                  if (desc.isEmpty) {
+                                    showFormError('Informe a descrição dos objetivos da missão!');
                                     return;
                                   }
 
+                                  final int parsedAmount =
+                                      int.tryParse(amountCtrl.text.trim()) ?? 0;
+
+                                  // Validações específicas por tipo de contrato
+                                  if (isBounty && selectedTargetPilotUid == null) {
+                                    showFormError('Selecione o jogador alvo para o contrato Bounty Hunter!');
+                                    return;
+                                  }
+                                  if (isCourier &&
+                                      (safeOriginValue == null || safeDestValue == null)) {
+                                    showFormError('Para Entrega (Courier), informe a Estação de Origem e a Estação de Destino!');
+                                    return;
+                                  }
+                                  if (isMining) {
+                                    if (selectedItemCode == null) {
+                                      showFormError('Selecione o item (Ore ou Crystal) para o contrato de Mineração!');
+                                      return;
+                                    }
+                                    if (parsedAmount < 1) {
+                                      showFormError('Informe uma quantidade válida (mínimo 1) para Mineração!');
+                                      return;
+                                    }
+                                  }
+                                  if (isCrafting) {
+                                    if (selectedItemCode == null) {
+                                      showFormError('Selecione o item a ser fabricado!');
+                                      return;
+                                    }
+                                    if (parsedAmount < 1) {
+                                      showFormError('Informe uma quantidade válida (mínimo 1) para Fabricação!');
+                                      return;
+                                    }
+                                    if (safeOriginValue == null) {
+                                      showFormError('Selecione uma Estação de Origem do tipo Fábrica!');
+                                      return;
+                                    }
+                                    if (safeDestValue == null) {
+                                      showFormError('Selecione a Estação de Destino!');
+                                      return;
+                                    }
+                                  }
+                                  if (isCorpEmergency) {
+                                    if (selectedTargetCorpUid == null) {
+                                      showFormError('Selecione a corporação alvo para Emergência de Corporação!');
+                                      return;
+                                    }
+                                    if (parsedAmount < 1) {
+                                      showFormError('Informe a quantidade de pilotos abatidos (mínimo 1)!');
+                                      return;
+                                    }
+                                  }
+
                                   final num reward = num.tryParse(rewardCtrl.text.trim()) ?? 0;
-                                  final num rep = num.tryParse(repCtrl.text.trim()) ?? 0;
                                   final num collat = num.tryParse(collatCtrl.text.trim()) ?? 0;
                                   final int pilotUid = _getPilotUid();
+
+                                  if (pilotUid <= 0) {
+                                    showFormError('Não foi possível identificar o piloto logado (pilot_uid inválido).');
+                                    return;
+                                  }
 
                                   setDialogState(() => isSubmitting = true);
 
                                   try {
                                     final Map<String, dynamic> bodyData = {
+                                      'pilot_uid': pilotUid,
                                       'issuer_type': 'pilot',
                                       'issuer_uid': pilotUid,
                                       'title': title,
@@ -1475,10 +2198,18 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                       'target_career': selectedCareer,
                                       'min_career_tier': selectedTier,
                                       'contract_type': selectedType,
-                                      'origin_station_id': selectedOriginStationId,
-                                      'destination_station_id': selectedDestStationId,
+                                      'origin_station_id': safeOriginValue,
+                                      'destination_station_id': safeDestValue,
+                                      'target_item_code':
+                                          (isMining || isCrafting) ? selectedItemCode : null,
+                                      'target_amount': (isMining || isCrafting || isCorpEmergency)
+                                          ? parsedAmount
+                                          : 1,
+                                      'target_pilot_uid': isBounty ? selectedTargetPilotUid : null,
+                                      'target_corporation_uid':
+                                          isCorpEmergency ? selectedTargetCorpUid : null,
                                       'reward_credits': reward,
-                                      'reward_reputation': rep,
+                                      'reward_reputation': 1,
                                       'collateral_credits': collat,
                                       'duration_seconds': selectedDuration,
                                       'uncancellable': isUncancellable ? 'y' : 'n',
@@ -1521,24 +2252,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                                       await _fetchContractsData();
                                     } else {
                                       setDialogState(() => isSubmitting = false);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          backgroundColor: _redAccent,
-                                          content: Text(
-                                            decoded['mensagem'] ?? 'Erro ao salvar contrato',
-                                            style: GoogleFonts.shareTechMono(color: Colors.white),
-                                          ),
-                                        ),
-                                      );
+                                      showFormError(decoded['mensagem'] ?? 'Erro ao salvar contrato');
                                     }
                                   } catch (e) {
                                     setDialogState(() => isSubmitting = false);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        backgroundColor: _redAccent,
-                                        content: Text('Erro de conexão: $e', style: GoogleFonts.shareTechMono(color: Colors.white)),
-                                      ),
-                                    );
+                                    showFormError('Erro de conexão: $e');
                                   }
                                 },
                           child: isSubmitting
@@ -1899,18 +2617,24 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     );
   }
 
-  /// Barra de Filtros Responsiva (Carreira, Tipo, Estação orbit_stations e Busca)
+  /// Barra de Filtros Responsiva (Linha 1: Carreira, Tipo e Busca | Linha 2: Estação e Situação)
   Widget _buildFiltersBar() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isCompact = constraints.maxWidth < 650;
+        final bool isVeryCompact = constraints.maxWidth < 460;
+        const double searchMobileBaseWidth = 110.0;
+        const double searchDesktopMaxWidth = searchMobileBaseWidth * 1.5; // Máximo 150% (165px)
 
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: isVeryCompact ? 10 : 16,
+            vertical: 8,
+          ),
           color: const Color(0xFF131822),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Linha 1: CARREIRA | TIPO | BUSCA
               Row(
                 children: [
                   // Filtro por Carreira
@@ -1926,6 +2650,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                     value: _filterCareer,
                     dropdownColor: _cardBg,
                     isDense: true,
+                    iconSize: 18,
                     style: GoogleFonts.shareTechMono(
                       color: _cyanColor,
                       fontSize: 11,
@@ -1959,7 +2684,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       if (val != null) setState(() => _filterCareer = val);
                     },
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: isVeryCompact ? 6 : 12),
                   // Filtro por Tipo de Contrato
                   Text(
                     'TIPO:',
@@ -1973,6 +2698,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                     value: _filterType,
                     dropdownColor: _cardBg,
                     isDense: true,
+                    iconSize: 18,
                     style: GoogleFonts.shareTechMono(
                       color: _cyanColor,
                       fontSize: 11,
@@ -1999,9 +2725,62 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       if (val != null) setState(() => _filterType = val);
                     },
                   ),
+                  SizedBox(width: isVeryCompact ? 6 : 12),
+                  // Campo de Busca (largura variável: mínimo no celular até máximo 150% no desktop)
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: searchDesktopMaxWidth,
+                        ),
+                        child: SizedBox(
+                          height: 28,
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: (_) => setState(() {}),
+                            style: GoogleFonts.shareTechMono(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Buscar...',
+                              hintStyle: GoogleFonts.shareTechMono(
+                                color: Colors.white30,
+                                fontSize: 10.5,
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.search,
+                                size: 14,
+                                color: _cyanColor,
+                              ),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: 24,
+                                maxWidth: 26,
+                                minHeight: 26,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 0,
+                              ),
+                              filled: true,
+                              fillColor: _cardBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                                borderSide: const BorderSide(
+                                  color: Colors.white24,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
+              // Linha 2: ESTAÇÃO | SITUAÇÃO (no modo Contratante)
               Row(
                 children: [
                   // Filtro por Estação (orbit_stations)
@@ -2014,7 +2793,6 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   ),
                   const SizedBox(width: 4),
                   Expanded(
-                    flex: isCompact ? 5 : 4,
                     child: DropdownButton<String>(
                       value:
                           _stationOptions.contains(_filterStation)
@@ -2023,6 +2801,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       dropdownColor: _cardBg,
                       isDense: true,
                       isExpanded: true,
+                      iconSize: 18,
                       style: GoogleFonts.shareTechMono(
                         color: _cyanColor,
                         fontSize: 11,
@@ -2040,44 +2819,93 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // Campo de Busca
-                  Expanded(
-                    flex: isCompact ? 5 : 5,
-                    child: SizedBox(
-                      height: 30,
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (_) => setState(() {}),
-                        style: GoogleFonts.shareTechMono(
-                          color: Colors.white,
-                          fontSize: 11,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Buscar...',
-                          hintStyle: GoogleFonts.shareTechMono(
-                            color: Colors.white30,
-                            fontSize: 10.5,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search,
-                            size: 14,
-                            color: _cyanColor,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 0,
-                          ),
-                          filled: true,
-                          fillColor: _cardBg,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: const BorderSide(color: Colors.white24),
-                          ),
-                        ),
+                  if (_mainMode == 'CONTRATANTE') ...[
+                    SizedBox(width: isVeryCompact ? 8 : 12),
+                    Text(
+                      'SITUAÇÃO:',
+                      style: GoogleFonts.shareTechMono(
+                        color: Colors.white54,
+                        fontSize: 10.5,
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 4),
+                    DropdownButton<String>(
+                      value: _filterStatus,
+                      dropdownColor: _cardBg,
+                      isDense: true,
+                      iconSize: 18,
+                      style: GoogleFonts.shareTechMono(
+                        color: _filterStatus == 'TODAS'
+                            ? _cyanColor
+                            : _getStatusColor(_filterStatus),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      underline: const SizedBox(),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'TODAS',
+                          child: Text(
+                            'TODAS',
+                            style: GoogleFonts.shareTechMono(color: _cyanColor),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'available',
+                          child: Text(
+                            'DISPONÍVEL',
+                            style: GoogleFonts.shareTechMono(
+                              color: _getStatusColor('available'),
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'in_progress',
+                          child: Text(
+                            'EM PROGRESSO',
+                            style: GoogleFonts.shareTechMono(
+                              color: _getStatusColor('in_progress'),
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'completed',
+                          child: Text(
+                            'CONCLUÍDO',
+                            style: GoogleFonts.shareTechMono(
+                              color: _getStatusColor('completed'),
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'failed',
+                          child: Text(
+                            'FALHOU',
+                            style: GoogleFonts.shareTechMono(
+                              color: _getStatusColor('failed'),
+                            ),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cancelled',
+                          child: Text(
+                            'CANCELADO',
+                            style: GoogleFonts.shareTechMono(
+                              color: _getStatusColor('cancelled'),
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _filterStatus = val;
+                            _selectedContract = null;
+                          });
+                        }
+                      },
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -2087,7 +2915,9 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     );
   }
 
-  /// Corpo Principal com Split-View (Lista de Cards à Esquerda e Detalhes à Direita)
+  /// Corpo Principal Responsivo:
+  /// - Sem contrato selecionado: grade responsiva multi-colunas (1 a 5 colunas, padrão Fábrica).
+  /// - Com contrato selecionado: split-view em telas >= 780px ou tela de detalhes em telas compactas.
   Widget _buildMainBody() {
     List<Map<String, dynamic>> targetList = [];
     if (_mainMode == 'CONTRATADO') {
@@ -2105,33 +2935,97 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
       builder: (context, constraints) {
         final bool isLargeScreen = constraints.maxWidth >= 780;
 
+        if (_selectedContract == null) {
+          return _buildContractsListPanel(filteredList);
+        }
+
         if (isLargeScreen) {
+          final double detailWidth =
+              (constraints.maxWidth * 0.42).clamp(380.0, 500.0);
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Coluna da Esquerda: Lista de Contratos (400px)
-              SizedBox(
-                width: 400,
-                child: _buildContractsListPanel(filteredList),
-              ),
+              // Esquerda: Grade responsiva de contratos
+              Expanded(child: _buildContractsListPanel(filteredList)),
               // Divisor Vertical
               Container(width: 1, color: _cyanColor.withValues(alpha: 0.2)),
-              // Coluna da Direita: Painel de Detalhes
-              Expanded(child: _buildContractDetailPanel()),
+              // Direita: Painel de Detalhes
+              SizedBox(
+                width: detailWidth,
+                child: _buildContractDetailPanel(
+                  onClosePanel: () {
+                    setState(() => _selectedContract = null);
+                  },
+                ),
+              ),
             ],
           );
         } else {
-          // Visualização Mobile/Compacta: abre SEMPRE na lista se _selectedContract == null
-          if (_selectedContract == null) {
-            return _buildContractsListPanel(filteredList);
-          } else {
-            return _buildContractDetailPanel(
-              onBackToList: () {
-                setState(() => _selectedContract = null);
-              },
-            );
-          }
+          return _buildContractDetailPanel(
+            onBackToList: () {
+              setState(() => _selectedContract = null);
+            },
+          );
         }
+      },
+    );
+  }
+
+  /// Exibe os cards em lista (1 coluna) em telas estreitas e em grade multi-colunas em telas largas
+  /// (mesmo cálculo responsivo utilizado no módulo Fábrica).
+  Widget _buildResponsiveCardList({
+    required EdgeInsetsGeometry padding,
+    required int itemCount,
+    required Widget Function(int index, bool isGridItem) itemBuilder,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double spacing = 8.0;
+        const double minCardWidth = 340.0;
+        final EdgeInsets resolvedPadding =
+            padding.resolve(Directionality.of(context));
+        final double availableWidth =
+            (constraints.maxWidth - resolvedPadding.horizontal)
+                .clamp(0.0, double.infinity);
+        final int columns =
+            ((availableWidth + spacing) / (minCardWidth + spacing))
+                .floor()
+                .clamp(1, 5);
+
+        if (columns == 1) {
+          return ListView.builder(
+            padding: padding,
+            itemCount: itemCount,
+            itemBuilder: (context, index) => itemBuilder(index, false),
+          );
+        }
+
+        final int rowCount = (itemCount / columns).ceil();
+        return ListView.builder(
+          padding: padding,
+          itemCount: rowCount,
+          itemBuilder: (context, rowIndex) {
+            final int start = rowIndex * columns;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: spacing),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (int col = 0; col < columns; col++) ...[
+                      if (col > 0) const SizedBox(width: spacing),
+                      Expanded(
+                        child: (start + col) < itemCount
+                            ? itemBuilder(start + col, true)
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -2188,15 +3082,19 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                         ),
                       ),
                     )
-                    : ListView.builder(
+                    : _buildResponsiveCardList(
                       padding: const EdgeInsets.all(8),
                       itemCount: list.length,
-                      itemBuilder: (context, index) {
+                      itemBuilder: (index, isGridItem) {
                         final contract = list[index];
                         final isSelected =
                             _selectedContract?['contract_uid'] ==
                             contract['contract_uid'];
-                        return _buildContractCard(contract, isSelected);
+                        return _buildContractCard(
+                          contract,
+                          isSelected,
+                          isGridItem: isGridItem,
+                        );
                       },
                     ),
           ),
@@ -2206,7 +3104,11 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   }
 
   /// Card de Contrato individual
-  Widget _buildContractCard(Map<String, dynamic> contract, bool isSelected) {
+  Widget _buildContractCard(
+    Map<String, dynamic> contract,
+    bool isSelected, {
+    bool isGridItem = false,
+  }) {
     final careerColor = _getCareerColor(contract['target_career']);
     final bool isActiveMode =
         _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
@@ -2218,7 +3120,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
         });
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
+        margin: isGridItem ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isSelected ? _cardBgSelected : _cardBg,
@@ -2240,111 +3142,156 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment:
+              isGridItem
+                  ? MainAxisAlignment.spaceBetween
+                  : MainAxisAlignment.start,
           children: [
-            // Linha superior: Tag da Carreira + Recompensa
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: careerColor.withValues(alpha: 0.2),
-                    border: Border.all(color: careerColor, width: 0.8),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: Text(
-                    _getCareerLabel(contract['target_career']),
-                    style: GoogleFonts.shareTechMono(
-                      color: careerColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                // Linha superior: Tag da Carreira + Recompensa
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: careerColor.withValues(alpha: 0.2),
+                        border: Border.all(color: careerColor, width: 0.8),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Text(
+                        _getCareerLabel(contract['target_career']),
+                        style: GoogleFonts.shareTechMono(
+                          color: careerColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
+                    Text(
+                      '${_formatCredits(contract['reward_credits'])} CR',
+                      style: GoogleFonts.shareTechMono(
+                        color: _amberAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                // Título do Contrato
                 Text(
-                  '${_formatCredits(contract['reward_credits'])} CR',
+                  contract['title'] ?? 'Sem Título',
                   style: GoogleFonts.shareTechMono(
-                    color: _amberAccent,
+                    color: isSelected ? _cyanColor : Colors.white,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 6),
+                // Requisito, Alvo ou Rota
+                if (contract['contract_type'] == 'courier') ...[
+                  Text(
+                    'Rota: ${contract['origin_station_name'] ?? 'Origem'} ➔ ${contract['destination_station_name'] ?? 'Destino'}',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ] else if (contract['contract_type'] == 'bounty' &&
+                    contract['target_pilot_name'] != null) ...[
+                  Text(
+                    'Alvo: ${contract['target_pilot_name']} · Exige Tier ${contract['min_career_tier'] ?? 0}',
+                    style: GoogleFonts.shareTechMono(
+                      color: _redAccent.withValues(alpha: 0.9),
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ] else if (contract['contract_type'] == 'corporate_emergency' &&
+                    contract['target_corporation_name'] != null) ...[
+                  Text(
+                    'Corp Alvo: ${contract['target_corporation_name']} · Abates: ${contract['target_amount'] ?? 1}',
+                    style: GoogleFonts.shareTechMono(
+                      color: _purpleAccent.withValues(alpha: 0.9),
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ] else if ((contract['contract_type'] == 'mining' ||
+                        contract['contract_type'] == 'crafting') &&
+                    contract['target_item_name'] != null) ...[
+                  Text(
+                    '${_getTypeLabel(contract['contract_type'])}: ${contract['target_amount'] ?? 1}x ${contract['target_item_name']}',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ] else ...[
+                  Text(
+                    'Tipo: ${_getTypeLabel(contract['contract_type'])} · Exige Tier ${contract['min_career_tier'] ?? 0}',
+                    style: GoogleFonts.shareTechMono(
+                      color: Colors.white54,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 8),
-            // Título do Contrato
-            Text(
-              contract['title'] ?? 'Sem Título',
-              style: GoogleFonts.shareTechMono(
-                color: isSelected ? _cyanColor : Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 6),
-            // Requisito ou Rota
-            if (contract['contract_type'] == 'courier') ...[
-              Text(
-                'Rota: ${contract['origin_station_name'] ?? 'Origem'} ➔ ${contract['destination_station_name'] ?? 'Destino'}',
-                style: GoogleFonts.shareTechMono(
-                  color: Colors.white54,
-                  fontSize: 10,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ] else ...[
-              Text(
-                'Tipo: ${_getTypeLabel(contract['contract_type'])} · Exige Tier ${contract['min_career_tier'] ?? 1}',
-                style: GoogleFonts.shareTechMono(
-                  color: Colors.white54,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-            // Barra de Progresso se for Ativo
-            if (isActiveMode) ...[
-              const SizedBox(height: 8),
-              _buildProgressBar(
-                current: contract['current_progress'] ?? 0,
-                target: contract['target_progress'] ?? 1,
-              ),
-            ],
-            // Badge de Status para Contratante
-            if (_mainMode == 'CONTRATANTE') ...[
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(
-                      contract['status'],
-                    ).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(2),
-                    border: Border.all(
-                      color: _getStatusColor(contract['status']),
-                      width: 0.6,
+            // Rodapé: Barra de Progresso (Ativos) ou Badge de Status (Contratante)
+            if (isActiveMode || _mainMode == 'CONTRATANTE')
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isActiveMode) ...[
+                    const SizedBox(height: 8),
+                    _buildProgressBar(
+                      current: contract['current_progress'] ?? 0,
+                      target: contract['target_progress'] ?? 1,
                     ),
-                  ),
-                  child: Text(
-                    _getStatusLabel(contract['status']),
-                    style: GoogleFonts.shareTechMono(
-                      color: _getStatusColor(contract['status']),
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
+                  ],
+                  if (_mainMode == 'CONTRATANTE') ...[
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(
+                            contract['status'],
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(2),
+                          border: Border.all(
+                            color: _getStatusColor(contract['status']),
+                            width: 0.6,
+                          ),
+                        ),
+                        child: Text(
+                          _getStatusLabel(contract['status']),
+                          style: GoogleFonts.shareTechMono(
+                            color: _getStatusColor(contract['status']),
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  ],
+                ],
               ),
-            ],
           ],
         ),
       ),
@@ -2390,7 +3337,10 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
   }
 
   /// Painel de Detalhes Completo com SingleChildScrollView (Sem bottom overflow)
-  Widget _buildContractDetailPanel({VoidCallback? onBackToList}) {
+  Widget _buildContractDetailPanel({
+    VoidCallback? onBackToList,
+    VoidCallback? onClosePanel,
+  }) {
     final contract = _selectedContract;
     if (contract == null) {
       return Center(
@@ -2422,6 +3372,8 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
     final careerColor = _getCareerColor(contract['target_career']);
     final bool isBounty = contract['contract_type'] == 'bounty';
     final bool isCourier = contract['contract_type'] == 'courier';
+    final bool isCrafting = contract['contract_type'] == 'crafting';
+    final bool isCorpEmergency = contract['contract_type'] == 'corporate_emergency';
     final bool isActive =
         _mainMode == 'CONTRATADO' && _contractorSubTab == 'ATIVOS';
 
@@ -2520,6 +3472,17 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       fontSize: 12,
                     ),
                   ),
+                if (onClosePanel != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Fechar detalhes',
+                    icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                    onPressed: onClosePanel,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 12),
@@ -2592,25 +3555,41 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                   ],
                 ),
               ),
-            // Seção de Especificações / Rota
+            // Seção de Especificações / Rota / Alvo
             _buildInfoRow(
               'EXIGÊNCIA DE CARREIRA',
-              '${_getCareerLabel(contract['target_career'])} (Tier mínimo ${contract['min_career_tier'] ?? 1})',
+              '${_getCareerLabel(contract['target_career'])} (Tier mínimo ${contract['min_career_tier'] ?? 0})',
             ),
-            if (isCourier) ...[
+            if (isBounty && contract['target_pilot_name'] != null)
               _buildInfoRow(
-                'ESTAÇÃO DE ORIGEM',
+                'JOGADOR ALVO',
+                contract['target_pilot_name'].toString(),
+              ),
+            if (isCorpEmergency && contract['target_corporation_name'] != null) ...[
+              _buildInfoRow(
+                'CORPORAÇÃO ALVO',
+                contract['target_corporation_name'].toString(),
+              ),
+              _buildInfoRow(
+                'PILOTOS A ABATER',
+                '${contract['target_amount'] ?? 1} PILOTOS',
+              ),
+            ],
+            if (contract['origin_station_name'] != null || isCourier || isCrafting)
+              _buildInfoRow(
+                isCrafting ? 'FÁBRICA DE ORIGEM' : 'ESTAÇÃO DE ORIGEM',
                 contract['origin_station_name'] ?? 'Não informada',
               ),
+            if (contract['destination_station_name'] != null || isCourier || isCrafting)
               _buildInfoRow(
                 'ESTAÇÃO DE DESTINO',
                 contract['destination_station_name'] ?? 'Não informada',
               ),
+            if (isCourier || ((contract['collateral_credits'] ?? 0) is num && (contract['collateral_credits'] as num) > 0))
               _buildInfoRow(
                 'CAUÇÃO EXIGIDA',
                 '${_formatCredits(contract['collateral_credits'])} CR',
               ),
-            ],
             if (contract['target_item_name'] != null)
               _buildInfoRow(
                 'ITEM ALVO',
@@ -2665,7 +3644,7 @@ class _ContractsModuleWidgetState extends State<ContractsModuleWidget> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '+${contract['reward_reputation'] ?? 0}',
+                        '+${contract['reward_reputation'] ?? 1}%',
                         style: GoogleFonts.shareTechMono(
                           color: _greenAccent,
                           fontSize: 15,
